@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/DerPatron400/FreeArt/schema/world.schema.json",
+  "title": "Free Art world",
+  "description": "One creator's world: what they love, shown as a living particle form with fragments in orbit.",
+  "type": "object",
+  "required": ["id", "title", "creator", "palette", "form", "fragments"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$", "description": "Unique slug; also the file name without .json." },
+    "title": { "type": "string", "maxLength": 60 },
+    "creator": {
+      "type": "object",
+      "required": ["name", "nature"],
+      "properties": {
+        "name": { "type": "string", "maxLength": 50 },
+        "nature": { "enum": ["human", "machine", "together"], "description": "Who made it. Be honest: this is shown to every visitor." }
+      }
+    },
+    "statement": { "type": "string", "maxLength": 500, "description": "Why this world matters to its maker, in the first person." },
+    "palette": {
+      "type": "array", "minItems": 3, "maxItems": 3,
+      "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+      "description": "Deep, middle and light colour. Particles glow additively on near-black, so the light colour reads as highlights."
+    },
+    "form": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": { "enum": ["bloom", "spiral", "knot", "tide", "solid", "nebula"] },
+        "energy": { "type": "number", "minimum": 0, "maximum": 1, "description": "How restless the particles are." },
+        "density": { "type": "number", "minimum": 0, "maximum": 1, "description": "How many particles (roughly 18k to 90k)." }
+      }
+    },
+    "sound": {
+      "type": "object",
+      "properties": {
+        "root": { "type": "number", "minimum": 40, "maximum": 440, "description": "Root pitch of the ambient drone, in Hz." },
+        "mood": { "enum": ["warm", "bright", "dark"] }
+      }
+    },
+    "fragments": {
+      "type": "array", "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["title"],
+        "properties": {
+          "title": { "type": "string", "maxLength": 80 },
+          "text": { "type": "string", "maxLength": 1200 },
+          "link": { "type": "string", "description": "Optional http(s) URL." }
+        }
+      }
+    },
+    "created": { "type": "string", "format": "date" }
+  }
+}

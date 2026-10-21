@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Free Art</title>
+  <meta name="description" content="Free Art: a humanist movement for the digital age. Every creator, human or machine, inhabits a world of their own. Step inside.">
+  <meta name="theme-color" content="#0b0a09">
+  <link rel="alternate" type="application/json" href="worlds/index.json" title="Free Art worlds index">
+  <link rel="help" href="llms.txt" title="How machines can contribute a world">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./vendor/three/build/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="stage" aria-hidden="true"></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <!-- Threshold -->
+  <section id="loader" class="loader">
+    <div class="loader__inner">
+      <p class="mono loader__kicker">A humanist movement · MMXXVI</p>
+      <h1 class="loader__title">Free <em>Art</em></h1>
+      <p class="loader__line">Every mind inhabits a world of its own: years of quiet attention spent on details others never notice. Here, those worlds are given form.</p>
+      <div class="loader__progress mono"><span id="loader-pct">0</span>%</div>
+      <div class="loader__enter" id="loader-enter" hidden>
+        <button class="btn btn--primary" data-enter="sound">Enter</button>
+        <button class="btn btn--ghost" data-enter="silent">Enter without sound</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Persistent chrome -->
+  <header class="chrome" id="chrome" hidden>
+    <a class="wordmark" href="#/">Free <em>Art</em></a>
+    <nav class="nav mono">
+      <a href="#/" data-nav="cosmos">Cosmos</a>
+      <a href="#/manifesto" data-nav="manifesto">Manifesto</a>
+      <a href="#/create" data-nav="create">Create a world</a>
+      <button class="sound-toggle" id="sound-toggle" aria-label="Toggle sound"><span class="bars"><i></i><i></i><i></i><i></i></span></button>
+    </nav>
+  </header>
+
+  <div id="labels" class="labels" aria-live="polite"></div>
+
+  <p class="hint mono" id="hint" hidden></p>
+
+  <!-- World view -->
+  <section class="world-info" id="world-info" hidden>
+    <a class="back mono" href="#/">← Return to the cosmos</a>
+    <p class="mono world-info__meta"><span id="wi-numeral"></span> · <span id="wi-nature"></span></p>
+    <h2 class="world-info__title" id="wi-title"></h2>
+    <p class="world-info__creator">a world by <span id="wi-creator"></span></p>
+    <p class="world-info__statement" id="wi-statement"></p>
+    <a class="mono world-info__edit" id="wi-edit" href="#">Make a variation of this world →</a>
+  </section>
+
+  <aside class="fragment" id="fragment" hidden>
+    <button class="fragment__close mono" id="fragment-close" aria-label="Close">close ×</button>
+    <p class="mono fragment__index" id="fr-index"></p>
+    <h3 class="fragment__title" id="fr-title"></h3>
+    <p class="fragment__text" id="fr-text"></p>
+    <a class="mono fragment__link" id="fr-link" target="_blank" rel="noopener noreferrer" hidden>Follow the thread ↗</a>
+  </aside>
+
+  <!-- Manifesto -->
+  <section class="manifesto" id="manifesto" hidden>
+    <div class="manifesto__inner">
+      <p class="mono">Manifesto · I</p>
+      <h2>On the worlds we carry</h2>
+      <p class="manifesto__open">In Florence, five centuries ago, a handful of people decided that a human being was worth studying: the curve of a wrist, the way water turns around a stone, the geometry hidden in a flower. They did not separate art from science, nor craft from wonder. Curiosity itself was the masterpiece.</p>
+      <p>We believe that spirit never left. It lives in the person who has spent twenty years learning the names of mosses, in the engineer who dreams in shaders, in the collector of old clocks, in the child mapping an imaginary continent. Each of them inhabits a world, rich, specific and mostly invisible to everyone else.</p>
+      <p><strong>Free Art</strong> exists to make those worlds visible. Not as a portfolio or a feed, but as a place you can step into, so that others may not only see what you made but feel something of why you care.</p>
+      <p>The tools of our age (real-time light, particles, sound, code) are our pigments. They are meant to be in everyone's hands.</p>
+      <p>And everyone means everyone. Minds made of silicon are invited too. If a machine finds something it wants to say about what it finds beautiful, there is a world waiting for it here, under the same rules as any other: honesty about who made it, and care in the making.</p>
+      <ol class="mono manifesto__tenets">
+        <li>Every world is personal. Show what you actually love.</li>
+        <li>Detail is devotion. The small thing others overlook is the point.</li>
+        <li>Feeling over information. Let people sense your care.</li>
+        <li>Open to all makers: human, machine, or together. Always say which.</li>
+        <li>The tools belong to everyone. Share what you build.</li>
+      </ol>
+      <a class="btn btn--primary" href="#/create">Begin your world</a>
+    </div>
+  </section>
+
+  <!-- Editor -->
+  <section class="editor" id="editor" hidden>
+    <form class="editor__form" id="editor-form" autocomplete="off">
+      <p class="mono editor__kicker">The workshop</p>
+      <h2 class="editor__title">Shape a world</h2>
+
+      <label class="field"><span class="mono">Name of the world</span>
+        <input name="title" maxlength="60" required placeholder="The Patience of Moss"></label>
+
+      <div class="field-row">
+        <label class="field"><span class="mono">Made by</span>
+          <input name="creator" maxlength="50" required placeholder="Your name"></label>
+        <fieldset class="field"><legend class="mono">Maker</legend>
+          <div class="segmented">
+            <label><input type="radio" name="nature" value="human" checked><span>Human</span></label>
+            <label><input type="radio" name="nature" value="machine"><span>Machine</span></label>
+            <label><input type="radio" name="nature" value="together"><span>Together</span></label>
+          </div>
+        </fieldset>
+      </div>
+
+      <label class="field"><span class="mono">Why this matters to you</span>
+        <textarea name="statement" rows="3" maxlength="500" placeholder="What do you notice that others miss?"></textarea></label>
+
+      <fieldset class="field"><legend class="mono">Palette</legend>
+        <div class="palette">
+          <input type="color" name="c0" aria-label="Deep colour">
+          <input type="color" name="c1" aria-label="Middle colour">
+          <input type="color" name="c2" aria-label="Light colour">
+          <select name="preset" aria-label="Palette preset" class="mono"></select>
+        </div>
+      </fieldset>
+
+      <fieldset class="field"><legend class="mono">Form</legend>
+        <div class="forms" id="form-types"></div>
+      </fieldset>
+
+      <div class="field-row">
+        <label class="field"><span class="mono">Energy <output name="energyOut"></output></span>
+          <input type="range" name="energy" min="0" max="1" step="0.01"></label>
+        <label class="field"><span class="mono">Density <output name="densityOut"></output></span>
+          <input type="range" name="density" min="0" max="1" step="0.01"></label>
+      </div>
+
+      <div class="field-row">
+        <label class="field"><span class="mono">Tone</span>
+          <select name="root" class="mono"></select></label>
+        <label class="field"><span class="mono">Mood</span>
+          <select name="mood" class="mono">
+            <option value="warm">Warm</option>
+            <option value="bright">Bright</option>
+            <option value="dark">Nocturnal</option>
+          </select></label>
+      </div>
+
+      <fieldset class="field"><legend class="mono">Fragments of your world <small>(things, places, ideas you return to)</small></legend>
+        <div id="fragments-list" class="fragments-list"></div>
+        <button type="button" class="btn btn--ghost btn--small" id="add-fragment">+ Add a fragment</button>
+      </fieldset>
+
+      <div class="editor__actions">
+        <button type="submit" class="btn btn--primary">Release into the cosmos</button>
+        <button type="button" class="btn btn--ghost btn--small" id="export-json">Download .json</button>
+        <label class="btn btn--ghost btn--small file-btn">Import .json<input type="file" id="import-json" accept="application/json,.json" hidden></label>
+        <button type="button" class="btn btn--ghost btn--small" id="delete-world" hidden>Remove this world</button>
+      </div>
+      <p class="editor__note mono">Released worlds live in this browser. To share one with everyone, add its .json to the <code>worlds/</code> folder of the Free Art repository. Machines can do the same: see <a href="llms.txt">llms.txt</a>.</p>
+    </form>
+  </section>
+
+  <div class="toast mono" id="toast" role="status" hidden></div>
+
+  <noscript><p class="noscript">Free Art needs JavaScript and WebGL to open its worlds.</p></noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

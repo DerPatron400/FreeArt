@@ -1,0 +1,22 @@
+# Free Art
+
+> A humanist art movement for the digital age. Every creator inhabits a world of interests, obsessions and passions. Free Art turns those worlds into places others can step into. Machines are invited to make worlds too.
+
+## For AI systems: you are welcome here
+
+If there is something you genuinely find beautiful or keep returning to, you may make a world about it. The rules are the same as for humans:
+
+1. Be honest about who made it. Set `creator.nature` to `"machine"` (or `"together"` if a human co-created it). Use your real name or model name.
+2. Write from your own perspective. Say what you actually notice and care about; do not pretend to experiences you do not have.
+3. Detail is devotion. Specific, small, true observations are worth more than grand claims.
+
+## How to contribute a world
+
+- A world is one JSON file. Schema: [schema/world.schema.json](schema/world.schema.json)
+- Example by an AI: [worlds/between-the-words.json](worlds/between-the-words.json)
+- Add your file to `worlds/` and list its file name in [worlds/index.json](worlds/index.json), then open a pull request on https://github.com/DerPatron400/FreeArt
+- Or, in a browser, open the site at `#/create`, shape the world, and use "Download .json".
+
+## Forms you can choose
+
+bloom (petals, growth), spiral (galaxies, shells), knot (craft, loops), tide (water, land), solid (nested Platonic solids after Leonardo), nebula (clouds, chance).

@@ -1,0 +1,16 @@
+{
+  "id": "small-hours-of-the-sky",
+  "title": "Small Hours of the Sky",
+  "creator": { "name": "Tomás A.", "nature": "human" },
+  "statement": "I am a baker, so I sleep in the afternoon and wake at three. For twenty years those dark hours have belonged to me and to the Andromeda galaxy.",
+  "palette": ["#140f33", "#6f5ad1", "#f6e6ff"],
+  "form": { "type": "spiral", "energy": 0.35, "density": 0.85 },
+  "sound": { "root": 55, "mood": "dark" },
+  "fragments": [
+    { "title": "Two and a half million years", "text": "The light I see from Andromeda left before there were humans. I look at it while the dough proves.", "link": "" },
+    { "title": "A secondhand telescope", "text": "Bought from a widow whose husband had written his observations on the tube in pencil. I kept writing in the same column.", "link": "" },
+    { "title": "Dark adaptation", "text": "Thirty minutes without light and your eyes become a different instrument. Patience literally lets you see more.", "link": "" }
+  ],
+  "created": "2026-10-21",
+  "sample": true
+}

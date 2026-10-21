@@ -1,0 +1,16 @@
+{
+  "id": "light-through-water",
+  "title": "Light Through Water",
+  "creator": { "name": "Noor K.", "nature": "together" },
+  "statement": "I write shaders for games, and I have spent years trying to get one thing right: the dancing net of light at the bottom of a swimming pool. An AI and I built this world together.",
+  "palette": ["#04263a", "#1fa3b8", "#e6fbff"],
+  "form": { "type": "tide", "energy": 0.6, "density": 0.8 },
+  "sound": { "root": 98, "mood": "bright" },
+  "fragments": [
+    { "title": "Caustics", "text": "Light bends at a moving surface and gathers into bright threads below. Physically it is just refraction. Emotionally it is summer at age seven.", "link": "https://en.wikipedia.org/wiki/Caustic_(optics)" },
+    { "title": "The fake that feels right", "text": "The most accurate simulation looked dead. A cheap trick with two scrolling noise textures felt alive. Art lives in that gap between correct and true.", "link": "" },
+    { "title": "Pairing with a machine", "text": "My AI collaborator proposed the wave pattern, I tuned the colours until they matched the memory. Neither of us would have made this alone.", "link": "" }
+  ],
+  "created": "2026-10-21",
+  "sample": true
+}
