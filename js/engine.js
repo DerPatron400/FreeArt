@@ -31,7 +31,13 @@ export class Engine {
   constructor(canvas) {
     this.canvas = canvas;
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Sharpness follows the machine: start at the screen's own density (at most 2),
+    // step down while frames run slow, step back up when there is room again.
+    this.maxRatio = Math.min(window.devicePixelRatio, 2);
+    this.ratio = this.maxRatio;
+    this.renderer.setPixelRatio(this.ratio);
+    this.frameMs = 16.7;
+    this.slowFor = 0; this.fastFor = 0;
     // three.js encodes the clear colour for the screen even when the composer
     // renders into a linear target, so pre-linearise it once more.
     this.renderer.setClearColor(new THREE.Color(0x0b0a09).convertSRGBToLinear(), 1);
@@ -135,6 +141,22 @@ export class Engine {
     return out;
   }
 
+  adapt(dt) {
+    if (document.hidden || dt <= 0 || dt >= 0.05) return; // ignore pauses and tab switches
+    this.frameMs += (dt * 1000 - this.frameMs) * 0.05;
+    this.slowFor = this.frameMs > 24 ? this.slowFor + dt : 0;
+    this.fastFor = this.frameMs < 14 ? this.fastFor + dt : 0;
+    let next = this.ratio;
+    if (this.slowFor > 1.5) next = Math.max(0.6, this.ratio - 0.25);
+    else if (this.fastFor > 6) next = Math.min(this.maxRatio, this.ratio + 0.25);
+    if (next === this.ratio) return;
+    this.ratio = next;
+    this.slowFor = this.fastFor = 0;
+    this.renderer.setPixelRatio(next);
+    this.composer.setPixelRatio?.(next);
+    this.resize();
+  }
+
   start() {
     const tick = () => {
       const dt = Math.min(this.clock.getDelta(), 0.05);
@@ -151,6 +173,7 @@ export class Engine {
       if (this.flight) this.camera.lookAt(this.controls.target);
       else if (!this.manual) this.controls.update();
       this.composer.render();
+      this.adapt(dt);
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);

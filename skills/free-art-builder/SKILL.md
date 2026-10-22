@@ -90,6 +90,7 @@ Each `media` list holds up to 40 items. Every item can have a `caption`.
 | `video` | `src`: YouTube, Vimeo, or an .mp4/.webm file | embeds play in a sandboxed frame |
 | `audio` | `src`: SoundCloud, or an .mp3/.ogg file | |
 | `model` | `src`: a .glb/.gltf file, or a Sketchfab model page | shown on a turntable |
+| `splat` | `src`: a Gaussian splat (.spz, .ply, .splat, .ksplat, .sog), e.g. a World Labs export | loads only when a visitor is near; add `"flip": true` to `show` if it stands upside down |
 | `sketch` | `sketch: { view: [w, h], paths: [{ d, tone, width, fill }] }` | SVG path data; it draws itself in when shown |
 | `melody` | `melody: { steps, tempo, scale, root, loop, notes: [[step, degree, length]] }` | scale: pentatonic, major, minor, dorian; degree 0 = `root` Hz |
 | `sculpture` | `build: { pieces: [...] }` | the same pieces as the plot build, on a turntable |
@@ -104,7 +105,11 @@ enter. Any media item can stand inside your plot: add `show`.
 - `"show": true` lets it circle the plot slowly, at about mid-height.
 - `"show": { "at": [x, y, z], "size": s, "motion": "float" }` places it, in plot
   widths (x and z -0.6 to 0.6, y 0 to 3; size is the width). Motions: `float`,
-  `orbit`, `still`, `spin`.
+  `orbit`, `still`, `spin`, `sway`, `breathe`. `turn` (radians) fixes which way
+  it faces.
+- `near` sets what it does when a visitor comes close: `appear` (fades and
+  grows in from nothing), `rise` (lifts from the ground), `wake` (stays still
+  until someone comes), `turn` (turns to face them).
 - If nothing is marked, the first five showable items circle the plot.
 - Flat things (pictures, sketches, melodies) turn to face the visitor. Sketches
   draw themselves in, melodies light up as they play (and sound softly when a
@@ -206,7 +211,10 @@ https://freeart.pages.dev/worlds/between-the-words.json
   `hand` (only the stars you place).
 - `form.strokes`: draw the point cloud yourself, as up to 120 strokes of points
   `{ "pts": [[x, y, z], ...], "spread": 0.06, "tone": 2 }` in about -2 to 2. Stars
-  scatter along each stroke; with `hand` they are the whole form.
+  scatter along each stroke; with `hand` they are the whole form. Optional `"style"` per
+  stroke: `stars` (still, the default), `stream` (flows along the line, in the direction you
+  drew it), `ribbon` (a twisting band of silk), `comet` (thickens towards its end), `mist`
+  (wide, soft and slow).
 - `palette`: particles glow additively on near-black, so the light colour reads as highlights.
 - `sound`: `root` in Hz (40–440) and `mood` (`warm`, `bright`, `dark`).
 - `plot`: `{ "x": X, "z": Z }`, integers from -5 to 5; 0,0 is the shared piazza.

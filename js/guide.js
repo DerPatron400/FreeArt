@@ -3,10 +3,11 @@
 // It edits the same world as the full workshop, so anyone can switch at any moment.
 import { el, toast } from './util.js';
 import { t as tr } from './i18n.js';
-import { MAX_MEDIA, sketchSvg, melodyPlayer } from './media.js';
+import { MAX_MEDIA, SHOWABLE, MOTIONS, NEAR, sketchSvg, melodyPlayer } from './media.js';
+import { exhibitItems } from './exhibit.js';
 import { sketchPad, melodyGrid } from './tools.js';
 import { imageToData } from './editor.js';
-import { FORMS, MAX_STROKES } from './store.js';
+import { FORMS, MAX_STROKES, BRUSHES } from './store.js';
 import { isOnline, space } from './server.js';
 
 // Each feeling sets colours, form, movement and sound together.
@@ -20,7 +21,7 @@ export const FEELINGS = [
 ];
 
 const SHOW_FIRST = 6; // the first few things float in the city on their own
-const AUDIO_MAX = 8e6, VIDEO_MAX = 40e6; // bytes, for files from the device (the server's limits)
+const AUDIO_MAX = 8e6, VIDEO_MAX = 40e6, MODEL_MAX = 25e6, SPLAT_MAX = 30e6; // bytes, for files from the device (the server's limits)
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 function button(text, cls = 'g-btn') {
@@ -29,6 +30,8 @@ function button(text, cls = 'g-btn') {
   return b;
 }
 
+const round = (v) => Math.round(v * 1000) / 1000;
+
 function fileToData(file) {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -36,6 +39,12 @@ function fileToData(file) {
     r.onerror = () => reject(r.error);
     r.readAsDataURL(file);
   });
+}
+
+// A file as a data URL with the type the server expects (splats have no registered one).
+async function fileAs(file, type) {
+  const data = await fileToData(file);
+  return 'data:' + type + data.slice(data.indexOf(';base64,'));
 }
 
 function pickFiles(accept, multiple = false) {
@@ -110,20 +119,26 @@ function recordSound() {
 }
 
 export class Guide {
-  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport }) {
+  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null }) {
+    this.onPlace = onPlace;
+    this.onNear = onNear;
+    this.getRoom = getRoom;
     this.onDelete = onDelete;
     this.onImport = onImport;
     this.onChange = onChange;
     this.onRelease = onRelease;
     this.onWorkshop = onWorkshop;
     this.onPaint = onPaint;
-    this.brush = { tone: 2, spread: 0.06 };
+    this.syncs = new Map(); // panel → functions that bring its controls up to date
+    this.brush = { tone: 2, spread: 0.06, style: 'stream' };
     this.root = el('div', 'guide');
     this.root.hidden = true;
     root.prepend(this.root);
   }
 
   load(world, plotLabel, { editing = false } = {}) {
+    this.placing = null;
+    this.onPlace(null);
     this.w = structuredClone(world);
     this.plotLabel = plotLabel;
     this.editing = editing;
@@ -132,10 +147,15 @@ export class Guide {
 
   show(on) {
     this.root.hidden = !on;
-    if (!on) this.stopPaint();
+    if (!on) { this.stopPaint(); this.stopPlace(); }
   }
 
-  changed() { this.onChange(this.w); this.showSpace?.(); }
+  changed() {
+    this.onChange(this.w);
+    this.showSpace?.();
+    for (const list of this.syncs.values()) for (const sync of list) sync();
+    if (this.placing) this.syncPlace();
+  }
 
   // The things people add live in the first chapter of the story.
   things() {
@@ -191,6 +211,7 @@ export class Guide {
       [tr('g.tune'), () => this.addTune()],
       [tr('g.words'), () => this.addThing({ kind: 'poem', poem: { lines: [], motion: 'gather' } })],
       [tr('g.stars'), () => this.togglePaint()],
+      [tr('g.objects'), () => this.addObject()],
     ];
     for (const [label, fn] of tools) {
       const t = button(label, 'g-tile');
@@ -203,10 +224,11 @@ export class Guide {
     return wrap;
   }
 
-  addThing(m) {
+  addThing(m, solid = false) {
     const list = this.things();
     if (list.length >= MAX_MEDIA) { toast(tr('g.maxThings', { n: MAX_MEDIA })); return false; }
-    m.show = list.filter((x) => x.show).length < SHOW_FIRST;
+    const room = this.getRoom();
+    m.show = solid ? { at: [0, Math.min(0.5, (room?.h ?? 1) * 0.4), 0], size: 0.45, motion: 'still', near: 'appear' } : list.filter((x) => x.show).length < SHOW_FIRST;
     list.push(m);
     this.changed();
     this.drawThings();
@@ -262,6 +284,37 @@ export class Guide {
     ]);
   }
 
+  // 3D models (.glb) and Gaussian splats (World Labs and others). Splats that are not
+  // .spz yet are packed into .spz right here, often ten times smaller.
+  addObject() {
+    this.choose(tr('g.objects'), [
+      [tr('g.splatFile'), async () => {
+        for (const f of await pickFiles('.spz,.ply,.splat,.ksplat,.sog', true)) {
+          const ext = (f.name.match(/\.(\w+)$/) || [])[1]?.toLowerCase();
+          let file = f;
+          if (ext !== 'spz' && ext !== 'sog') {
+            toast(tr('g.packing', { name: f.name }), 8000);
+            try {
+              const { transcodeSpz } = await import('@sparkjsdev/spark');
+              const { fileBytes } = await transcodeSpz({ inputs: [{ fileBytes: new Uint8Array(await f.arrayBuffer()), pathOrUrl: f.name }] });
+              file = new File([fileBytes], f.name.replace(/\.\w+$/, '.spz'));
+            } catch { toast(tr('g.badObject', { name: f.name })); continue; }
+          }
+          if (file.size > SPLAT_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: SPLAT_MAX / 1e6 })); continue; }
+          const type = 'application/x-' + (file.name.endsWith('.sog') ? 'sog' : 'spz');
+          if (!this.addThing({ kind: 'splat', src: await fileAs(file, type), caption: f.name.replace(/\.\w+$/, '') }, true)) break;
+        }
+      }],
+      [tr('g.modelFile'), async () => {
+        for (const f of await pickFiles('.glb', true)) {
+          if (f.size > MODEL_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: MODEL_MAX / 1e6 })); continue; }
+          if (!this.addThing({ kind: 'model', src: await fileAs(f, 'model/gltf-binary'), caption: f.name.replace(/\.\w+$/, '') }, true)) break;
+        }
+      }],
+      [tr('g.objectLink'), () => this.addThing({ kind: 'splat', src: '' }, true)],
+    ]);
+  }
+
   // A small sheet of choices under the shelf.
   choose(title, options) {
     const sheet = el('div', 'g-sheet');
@@ -282,6 +335,7 @@ export class Guide {
 
   togglePaint() {
     if (this.painting) return this.stopPaint();
+    this.stopPlace();
     this.painting = true;
     const p = this.paintPanel;
     p.hidden = false;
@@ -296,16 +350,18 @@ export class Guide {
     const soft = el('input');
     Object.assign(soft, { type: 'range', min: 0.01, max: 0.3, step: 0.005, value: this.brush.spread });
     soft.addEventListener('input', () => { this.brush.spread = +soft.value; this.paint(); });
+    const brushes = el('div', 'g-choice');
+    for (const id of BRUSHES) {
+      const b = button(tr('brush.' + id), 'g-pill' + (this.brush.style === id ? ' is-on' : ''));
+      b.addEventListener('click', () => { this.brush.style = id; brushes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.paint(); });
+      brushes.append(b);
+    }
     const softL = el('label', 'g-range');
     softL.append(el('span', null, tr('g.fine')), soft, el('span', null, tr('g.soft')));
-    const only = el('label', 'g-check');
-    const cb = el('input');
-    Object.assign(cb, { type: 'checkbox', checked: this.w.form.type === 'hand' });
-    cb.addEventListener('change', () => {
-      if (cb.checked) { this.prevType = this.w.form.type; this.w.form.type = 'hand'; } else this.w.form.type = this.prevType && this.prevType !== 'hand' ? this.prevType : 'nebula';
-      this.changed();
-    });
-    only.append(cb, ' ' + tr('g.onlyMine'));
+    // The star colours are the world's colours: change them here and the brush follows.
+    this.syncs.set('paint', []);
+    this.syncs.get('paint').push(() => tones.querySelectorAll('.g-dot').forEach((b, i) => { b.style.background = this.w.palette[i]; }));
+    const look = this.lookControls('paint');
     const undo = button(tr('g.undo'), 'g-btn g-btn--soft');
     undo.addEventListener('click', () => { this.w.form.strokes?.pop(); if (!this.w.form.strokes?.length) delete this.w.form.strokes; this.changed(); });
     const clear = button(tr('g.clear'), 'g-btn g-btn--soft');
@@ -320,7 +376,8 @@ export class Guide {
     done.addEventListener('click', () => this.stopPaint());
     const row = el('div', 'g-choice');
     row.append(undo, clear, turn, done);
-    p.replaceChildren(el('p', 'g-help', tr('g.paintHelp')), tones, softL, only, row);
+    p.replaceChildren(el('p', 'g-help', tr('g.paintHelp')), el('p', 'g-help', tr('brush.label')), brushes, tones, softL,
+      el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density, row);
     this.paint();
   }
 
@@ -329,6 +386,7 @@ export class Guide {
     this.onPaint(true, {
       tone: this.brush.tone,
       spread: this.brush.spread,
+      style: this.brush.style,
       onStroke: (st) => {
         const list = (this.w.form.strokes ||= []);
         if (list.length >= MAX_STROKES) return toast(tr('g.maxStrokes'));
@@ -341,20 +399,182 @@ export class Guide {
   stopPaint() {
     if (!this.painting) return;
     this.painting = false;
+    this.syncs.delete('paint');
     this.paintPanel.hidden = true;
     this.onPaint(false);
+  }
+
+  // ---- placing things by hand ----
+
+  // The thing's place in the plot, made explicit so it can be moved.
+  placed(m) {
+    const room = this.getRoom() || { ax: 0.5, az: 0.5, h: 1 };
+    if (!m.show || m.show === true) m.show = { at: [0, Math.min(0.5, room.h * 0.45), 0], size: 0.32, motion: 'float' };
+    if (!m.show.at) m.show.at = [0, Math.min(0.5, room.h * 0.45), 0];
+    return m.show;
+  }
+
+  startPlace(m) {
+    this.stopPaint();
+    this.placed(m);
+    this.placing = { m, turning: false };
+    this.changed();
+    this.drawThings();
+    this.syncPlace();
+  }
+
+  // Tell the view which thing is being placed (its position among what the plot shows).
+  syncPlace() {
+    if (!this.placing) return this.onPlace(null);
+    const { m, turning } = this.placing;
+    const index = exhibitItems(this.w).indexOf(m);
+    this.onPlace(index < 0 ? null : {
+      index, turning,
+      onMove: (x, z) => { const s = this.placed(m); s.at = [round(x), s.at[1], round(z)]; this.changed(); },
+    });
+  }
+
+  stopPlace() {
+    if (!this.placing) return;
+    this.placing = null;
+    this.onPlace(null);
+    this.onNear(null);
+    this.drawThings();
+  }
+
+  placePanel(m) {
+    const room = this.getRoom() || { ax: 0.5, az: 0.5, h: 1 };
+    const s = this.placed(m);
+    const p = el('div', 'g-paint g-place');
+    const slider = (label, min, max, step, value, fn) => {
+      const l = el('label', 'g-range');
+      const r = el('input');
+      Object.assign(r, { type: 'range', min, max, step, value });
+      r.setAttribute('aria-label', label);
+      r.addEventListener('input', () => { fn(+r.value); this.changed(); });
+      l.append(el('span', 'g-range__name', label), r);
+      return l;
+    };
+    const height = slider(tr('g.height'), 0, Math.max(0.2, room.h), 0.01, s.at[1], (v) => { s.at = [s.at[0], round(v), s.at[2]]; });
+    const size = slider(tr('g.size'), 0.05, 1.2, 0.01, s.size, (v) => { s.size = round(v); });
+    const turn = slider(tr('g.turnIt'), -180, 180, 1, typeof s.turn === 'number' ? Math.round(s.turn * 180 / Math.PI) : 0, (v) => { s.turn = round(v * Math.PI / 180); face.querySelector('input').checked = false; });
+    const face = el('label', 'g-check');
+    const fc = el('input');
+    Object.assign(fc, { type: 'checkbox', checked: typeof s.turn !== 'number' });
+    fc.addEventListener('change', () => { if (fc.checked) delete s.turn; else s.turn = 0; this.changed(); });
+    face.append(fc, ' ' + tr('g.faceVisitors'));
+    const pills = (ids, key, current, set) => {
+      const row = el('div', 'g-choice');
+      for (const id of ids) {
+        const b = button(tr(key + id), 'g-pill' + (current === id ? ' is-on' : ''));
+        b.addEventListener('click', () => { set(id); row.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.changed(); });
+        row.append(b);
+      }
+      return row;
+    };
+    const motion = pills(MOTIONS, 'mo.', s.motion || 'float', (id) => { s.motion = id; });
+    const near = pills(NEAR, 'near.', s.near || 'none', (id) => { if (id === 'none') delete s.near; else s.near = id; });
+    const preview = pills(['far', 'close'], 'g.seen.', 'close', (id) => this.onNear(id === 'far' ? 0 : 1));
+    const view = button(tr('g.turn'), 'g-btn g-btn--soft');
+    view.addEventListener('click', () => {
+      this.placing.turning = !this.placing.turning;
+      view.textContent = this.placing.turning ? tr('g.backPlacing') : tr('g.turn');
+      this.syncPlace();
+    });
+    const done = button(tr('ui.done'), 'g-btn g-btn--main');
+    done.addEventListener('click', () => this.stopPlace());
+    const row = el('div', 'g-choice');
+    row.append(view, done);
+    p.append(el('p', 'g-help', tr('g.placeHelp')), height, size, turn, face,
+      el('p', 'g-help', tr('g.motion')), motion, el('p', 'g-help', tr('g.whenNear')), near, el('p', 'g-help', tr('g.preview')), preview);
+    if (m.kind === 'splat') {
+      const flip = el('label', 'g-check');
+      const f = el('input');
+      Object.assign(f, { type: 'checkbox', checked: !!s.flip });
+      f.addEventListener('change', () => { if (f.checked) s.flip = true; else delete s.flip; this.changed(); });
+      flip.append(f, ' ' + tr('g.flip'));
+      p.append(flip);
+    }
+    p.append(row);
+    return p;
+  }
+
+  // Ready-made arrangements for everything the plot shows.
+  arrangeBar() {
+    const bar = el('div', 'g-arrange');
+    bar.append(el('p', 'g-help', tr('g.arrange')));
+    const row = el('div', 'g-choice');
+    for (const id of ['centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']) {
+      const b = button(tr('arrange.' + id), 'g-pill');
+      b.addEventListener('click', () => this.arrange(id));
+      row.append(b);
+    }
+    bar.append(row);
+    return bar;
+  }
+
+  arrange(id) {
+    const room = this.getRoom() || { ax: 0.5, az: 0.5, h: 1, front: 1 };
+    const list = this.things().filter((m) => m.show && SHOWABLE.includes(m.kind));
+    const n = list.length;
+    if (!n) return;
+    const mid = Math.min(room.h * 0.45, 0.6), r = Math.min(room.ax, room.az) * 0.62;
+    list.forEach((m, i) => {
+      const s = this.placed(m);
+      const size = Math.min(s.size, 1.2 * Math.min(room.ax, room.az) / Math.max(1, Math.sqrt(n)));
+      let at = [0, mid, 0], turn, motion = s.motion === 'orbit' ? 'float' : s.motion || 'float';
+      if (id === 'centre') {
+        if (i === 0) { at = [0, mid, 0]; s.size = round(Math.min(0.55, room.ax)); }
+        else { const a = ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2; at = [Math.cos(a) * r, mid * 0.8, Math.sin(a) * r]; s.size = round(Math.min(size, 0.22)); }
+      } else if (id === 'ring') {
+        const a = (i / n) * Math.PI * 2 + Math.PI / 2;
+        at = [Math.cos(a) * r, mid, Math.sin(a) * r];
+        turn = Math.atan2(at[0], at[2]); // facing outwards, to the street on every side
+        s.size = round(Math.min(size, 0.3));
+      } else if (id === 'row' || id === 'street') {
+        const x = n === 1 ? 0 : (-1 + (2 * i) / (n - 1)) * room.ax * 0.72;
+        const z = id === 'street' ? room.front * (room.az - Math.min(size, 0.3) / 2 - 0.04) : 0;
+        at = [x, mid, z];
+        turn = room.front > 0 ? 0 : Math.PI;
+        s.size = round(Math.min(size, (room.ax * 1.5) / n, 0.35));
+      } else if (id === 'stack') {
+        const each = Math.min(0.3, (room.h * 0.9) / n);
+        s.size = round(Math.min(s.size, each * 0.9));
+        at = [0, each * (i + 0.5), 0];
+      } else if (id === 'orbit') {
+        const a = (i / n) * Math.PI * 2;
+        at = [Math.cos(a) * r, mid + (i % 2 ? 0.08 : -0.04), Math.sin(a) * r];
+        motion = 'orbit';
+        s.size = round(Math.min(size, 0.28));
+      } else if (id === 'floor') {
+        const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
+        const cx = i % cols, cz = Math.floor(i / cols);
+        s.size = round(Math.min(size, (room.ax * 1.6) / cols, 0.4));
+        at = [(cols === 1 ? 0 : (-1 + (2 * cx) / (cols - 1)) * room.ax * 0.65), s.size / 2, (rows === 1 ? 0 : (-1 + (2 * cz) / (rows - 1)) * room.az * 0.65)];
+        motion = 'still';
+      }
+      s.at = at.map(round);
+      s.motion = motion;
+      if (turn === undefined) delete s.turn; else s.turn = round(turn);
+    });
+    this.changed();
+    this.drawThings();
   }
 
   // ---- what has been made ----
 
   thingsList() {
     this.thingsEl = el('div', 'g-cards');
+    this.arrangeEl = this.arrangeBar();
     this.drawThings();
-    return this.thingsEl;
+    const wrap = el('div');
+    wrap.append(this.arrangeEl, this.thingsEl);
+    return wrap;
   }
 
   drawThings() {
     const list = this.things();
+    if (this.arrangeEl) this.arrangeEl.hidden = list.filter((m) => m.show && SHOWABLE.includes(m.kind)).length < 1;
     this.thingsEl.replaceChildren(...list.map((m, k) => this.card(m, k, list)));
   }
 
@@ -391,6 +611,19 @@ export class Guide {
       u.addEventListener('input', () => { m.src = u.value.trim(); this.changed(); });
       c.append(u);
     }
+    if (m.kind === 'model' || m.kind === 'splat') {
+      c.append(el('p', 'g-help', tr(m.kind === 'splat' ? 'g.isSplat' : 'g.isModel')));
+      if (!m.src?.startsWith('data:')) {
+        const u = el('input', 'g-input g-input--small');
+        Object.assign(u, { type: 'url', value: m.src || '', placeholder: tr('g.objectLinkPh') });
+        u.addEventListener('change', () => {
+          m.src = u.value.trim();
+          m.kind = /\.(glb|gltf)(\?|#|$)/i.test(m.src) ? 'model' : 'splat';
+          this.changed(); redraw();
+        });
+        c.append(u);
+      }
+    }
     const cap = el('input', 'g-input g-input--small');
     Object.assign(cap, { value: m.caption || '', placeholder: tr('g.captionPh') });
     cap.addEventListener('input', () => { m.caption = cap.value; this.changed(); });
@@ -403,13 +636,19 @@ export class Guide {
     cb.addEventListener('change', () => { m.show = cb.checked; this.changed(); });
     show.append(cb, ' ' + tr('g.float'));
     tools.append(show);
+    if (SHOWABLE.includes(m.kind)) {
+      const place = button(this.placing?.m === m ? tr('ui.done') : tr('g.place'), 'g-btn g-btn--soft');
+      place.addEventListener('click', () => (this.placing?.m === m ? this.stopPlace() : this.startPlace(m)));
+      tools.append(place);
+    }
     const move = (d) => { const j = k + d; if (j < 0 || j >= list.length) return; [list[k], list[j]] = [list[j], list[k]]; this.changed(); redraw(); };
     const up = button('↑', 'g-icon'); up.setAttribute('aria-label', tr('g.moveUp')); up.disabled = k === 0; up.addEventListener('click', () => move(-1));
     const down = button('↓', 'g-icon'); down.setAttribute('aria-label', tr('g.moveDown')); down.disabled = k === list.length - 1; down.addEventListener('click', () => move(1));
     const rm = button(tr('g.remove'), 'g-card__remove');
-    rm.addEventListener('click', () => { list.splice(k, 1); this.changed(); redraw(); });
+    rm.addEventListener('click', () => { if (this.placing?.m === m) this.stopPlace(); list.splice(k, 1); this.changed(); redraw(); });
     tools.append(up, down, rm);
     c.append(tools);
+    if (this.placing?.m === m) c.append(this.placePanel(m));
     return c;
   }
 
@@ -444,8 +683,8 @@ export class Guide {
     const sec = el('details', 'g-looks');
     sec.append(el('summary', 'g-h', tr('g.looks')));
     const grid = el('div', 'g-feel');
-    const colours = el('div', 'g-colours');
-    const setColours = () => colours.querySelectorAll('input').forEach((x, i) => { x.value = this.w.palette[i]; });
+    this.syncs.set('looks', []);
+    const look = this.lookControls('looks');
     for (const f of FEELINGS) {
       const b = button('', 'g-feel__card');
       const sw = el('span', 'g-feel__swatch');
@@ -455,12 +694,18 @@ export class Guide {
         const keep = this.w.form.type === 'hand';
         Object.assign(this.w, { palette: f.palette.slice(), form: { ...f.form, type: keep ? 'hand' : f.form.type, strokes: this.w.form.strokes }, sound: { ...f.sound } });
         if (!this.w.form.strokes) delete this.w.form.strokes;
-        setColours();
-        shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x.dataset.id === this.w.form.type));
         this.changed();
       });
       grid.append(b);
     }
+    sec.append(grid, el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density);
+    return sec;
+  }
+
+  // Colours, shape, movement and number of stars. The same controls appear under
+  // "Colours, shape and movement" and while placing stars by hand; every copy stays in step.
+  lookControls(panel) {
+    const colours = el('div', 'g-colours');
     [0, 1, 2].forEach((i) => {
       const c = el('input');
       Object.assign(c, { type: 'color', value: this.w.palette[i] });
@@ -472,7 +717,7 @@ export class Guide {
     for (const f of FORMS) {
       const b = button(tr('form.' + f.id), 'g-pill' + (this.w.form.type === f.id ? ' is-on' : ''));
       b.dataset.id = f.id;
-      b.addEventListener('click', () => { this.w.form.type = f.id; shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.changed(); });
+      b.addEventListener('click', () => { this.w.form.type = f.id; this.changed(); });
       shapes.append(b);
     }
     const slider = (label, a, z, key) => {
@@ -482,11 +727,16 @@ export class Guide {
       r.setAttribute('aria-label', label);
       r.addEventListener('change', () => { this.w.form[key] = +r.value; this.changed(); });
       l.append(el('span', null, a), r, el('span', null, z));
-      return l;
+      return [l, r];
     };
-    sec.append(grid, el('p', 'g-help', tr('g.ownColours')), colours, el('p', 'g-help', tr('g.shape')), shapes,
-      slider(tr('g.movement'), tr('g.still'), tr('g.lively'), 'energy'), slider(tr('g.starCount'), tr('g.few'), tr('g.many'), 'density'));
-    return sec;
+    const [energy, er] = slider(tr('g.movement'), tr('g.still'), tr('g.lively'), 'energy');
+    const [density, dr] = slider(tr('g.starCount'), tr('g.few'), tr('g.many'), 'density');
+    this.syncs.get(panel).push(() => {
+      colours.querySelectorAll('input').forEach((x, i) => { if (x !== document.activeElement) x.value = this.w.palette[i]; });
+      shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x.dataset.id === this.w.form.type));
+      er.value = this.w.form.energy; dr.value = this.w.form.density;
+    });
+    return { colours, shapes, energy, density };
   }
 
   finish() {

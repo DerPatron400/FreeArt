@@ -35,7 +35,7 @@ const BLANK = {
 };
 
 export class Editor {
-  constructor({ onChange, onRelease, onDelete, onPaint = () => {} }) {
+  constructor({ onChange, onRelease, onDelete, onPaint = () => {}, onPlace, onNear, getRoom }) {
     this.root = document.getElementById('editor');
     this.form = document.getElementById('editor-form');
     this.list = document.getElementById('fragments-list');
@@ -50,12 +50,15 @@ export class Editor {
     this.guide = new Guide(this.root, {
       onChange: (w) => {
         const n = normalizeWorld({ ...w, plot: this.plot });
-        saveDraft(exportable(n));
+        this.saveSoon(n);
         this.onChange(n);
       },
       onRelease: (w) => { this.write(normalizeWorld(w)); this.onRelease(this.read()); },
       onWorkshop: (w) => { this.write(normalizeWorld(w)); this.setMode('workshop'); this.emit(); },
       onPaint,
+      onPlace,
+      onNear,
+      getRoom,
       onDelete: (id) => this.onDelete(id),
       onImport: (raw) => {
         const w = normalizeWorld({ ...raw, plot: raw.plot || this.plot });
@@ -499,8 +502,15 @@ export class Editor {
     f.energyOut.value = Math.round(f.energy.value * 100);
     f.densityOut.value = Math.round(f.density.value * 100);
     const w = this.read();
-    saveDraft(exportable(w));
+    this.saveSoon(w);
     this.onChange(w);
+  }
+
+  // The draft can hold pictures and sounds, megabytes of them: write it once the
+  // editing pauses, not on every tick of a slider or colour picker.
+  saveSoon(w) {
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => saveDraft(exportable(w)), 700);
   }
 
   download() {

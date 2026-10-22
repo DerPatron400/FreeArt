@@ -124,6 +124,17 @@
                   2
                 ],
                 "description": "Palette colour the stars lean towards."
+              },
+              "style": {
+                "type": "string",
+                "enum": [
+                  "stars",
+                  "stream",
+                  "ribbon",
+                  "comet",
+                  "mist"
+                ],
+                "description": "How the stars of this stroke behave: still stars (default), a flowing stream, a twisting ribbon of silk, a comet that thickens towards its end, or a slow drifting mist."
               }
             }
           }
@@ -185,6 +196,7 @@
                     "video",
                     "audio",
                     "model",
+                    "splat",
                     "sketch",
                     "melody",
                     "sculpture",
@@ -407,8 +419,28 @@
                             "float",
                             "orbit",
                             "still",
-                            "spin"
+                            "spin",
+                            "sway",
+                            "breathe"
                           ]
+                        },
+                        "turn": {
+                          "type": "number",
+                          "description": "Fixed facing in radians (0 faces the +z side). Without it, flat things face the visitor and solid ones slowly turn."
+                        },
+                        "near": {
+                          "enum": [
+                            "none",
+                            "appear",
+                            "rise",
+                            "wake",
+                            "turn"
+                          ],
+                          "description": "What it does as a visitor comes near: appear (fades and grows in), rise (lifts from the ground), wake (its motion starts), turn (turns to face them)."
+                        },
+                        "flip": {
+                          "type": "boolean",
+                          "description": "Splats only: keep the file's own up direction (most splat files need the default turn-over)."
                         }
                       }
                     }

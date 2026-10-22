@@ -10,6 +10,7 @@ export const KINDS = [
   { id: 'video', name: 'Video', note: 'film, YouTube, Vimeo' },
   { id: 'audio', name: 'Sound', note: 'recording, SoundCloud' },
   { id: 'model', name: '3D model', note: '.glb file or Sketchfab' },
+  { id: 'splat', name: 'Splat', note: 'a Gaussian splat: .spz, .ply, .splat' },
   { id: 'sketch', name: 'Sketch', note: 'draw it here' },
   { id: 'melody', name: 'Melody', note: 'compose it here' },
   { id: 'sculpture', name: 'Sculpture', note: 'build it from pieces' },
@@ -17,7 +18,7 @@ export const KINDS = [
   { id: 'constellation', name: 'Constellation', note: 'how things connect' },
 ];
 // What can stand in a plot and be seen from the street.
-export const SHOWABLE = ['image', 'video', 'audio', 'model', 'sketch', 'melody', 'sculpture', 'poem', 'constellation'];
+export const SHOWABLE = ['image', 'video', 'audio', 'model', 'splat', 'sketch', 'melody', 'sculpture', 'poem', 'constellation'];
 export const MAX_MEDIA = 40;
 const SCALES = {
   pentatonic: [0, 2, 4, 7, 9], major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10],
@@ -27,8 +28,9 @@ const str = (v, max) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
 
 // A source we are willing to load: https, a path inside the site, or (images only) inline data.
 // Files people add from their own device travel inside the world as data URLs.
-const DATA_MAX = { image: 6e6, audio: 16e6, video: 80e6 };
-const DATA_TYPES = { image: /^data:image\/(png|jpeg|webp|gif);base64,/i, audio: /^data:audio\/(webm|ogg|mpeg|mp3|mp4|aac|wav|x-wav|x-m4a);(codecs=[\w.]+;)?base64,/i, video: /^data:video\/(mp4|webm|ogg|quicktime);(codecs=[\w.,]+;)?base64,/i };
+const DATA_MAX = { image: 6e6, audio: 16e6, video: 80e6, model: 34e6, splat: 41e6 };
+const DATA_TYPES = { image: /^data:image\/(png|jpeg|webp|gif);base64,/i, audio: /^data:audio\/(webm|ogg|mpeg|mp3|mp4|aac|wav|x-wav|x-m4a);(codecs=[\w.]+;)?base64,/i, video: /^data:video\/(mp4|webm|ogg|quicktime);(codecs=[\w.,]+;)?base64,/i,
+  model: /^data:model\/gltf-binary;base64,/i, splat: /^data:application\/x-(spz|ply|splat|ksplat|sog);base64,/i };
 export function safeSrc(src, kind) {
   if (typeof src !== 'string') return '';
   if (src.startsWith('data:')) {
@@ -110,13 +112,21 @@ function normalizeConstellation(c) {
   return { nodes, edges };
 }
 
+// How a placed thing moves, and what it does when a visitor comes near the plot.
+export const MOTIONS = ['still', 'float', 'sway', 'spin', 'breathe', 'orbit'];
+export const NEAR = ['none', 'appear', 'rise', 'wake', 'turn'];
+
 // Where an item stands in the plot, in plot widths (see build.js): true = let the plot arrange it.
 function normalizeShow(v) {
   if (v === true) return true;
   if (!v || typeof v !== 'object') return false;
-  const at = Array.isArray(v.at) && v.at.length === 3 ? [clamp(+v.at[0] || 0, -0.6, 0.6), clamp(+v.at[1] || 0, 0, 3), clamp(+v.at[2] || 0, -0.6, 0.6)] : null;
-  const out = { size: clamp(typeof v.size === 'number' ? v.size : 0.32, 0.05, 1.5), motion: ['float', 'orbit', 'still', 'spin'].includes(v.motion) ? v.motion : 'float' };
+  const at = Array.isArray(v.at) && v.at.length === 3 ? [clamp(+v.at[0] || 0, -1, 1), clamp(+v.at[1] || 0, 0, 3), clamp(+v.at[2] || 0, -1, 1)] : null;
+  const out = { size: clamp(typeof v.size === 'number' ? v.size : 0.32, 0.05, 1.5), motion: MOTIONS.includes(v.motion) ? v.motion : 'float' };
   if (at) out.at = at.map((x) => Math.round(x * 1000) / 1000);
+  // A fixed facing (radians about the vertical); without it flat things face whoever looks.
+  if (typeof v.turn === 'number' && isFinite(v.turn)) out.turn = Math.round(Math.atan2(Math.sin(v.turn), Math.cos(v.turn)) * 1000) / 1000;
+  if (NEAR.includes(v.near) && v.near !== 'none') out.near = v.near;
+  if (v.flip === true) out.flip = true;
   return out;
 }
 
@@ -126,7 +136,7 @@ export function normalizeMedia(list) {
     const out = { kind: m.kind };
     const caption = str(m.caption, 200);
     if (caption) out.caption = caption;
-    if (['image', 'video', 'audio', 'model'].includes(m.kind)) {
+    if (['image', 'video', 'audio', 'model', 'splat'].includes(m.kind)) {
       out.src = safeSrc(m.src, m.kind);
       if (!out.src) return null;
       if (m.kind === 'image') out.alt = str(m.alt, 200);
@@ -325,6 +335,8 @@ export function renderMedia(m, palette) {
     fig.append(verse);
   } else if (m.kind === 'constellation') {
     fig.append(constellationSvg(m.constellation, palette));
+  } else if (m.kind === 'splat') {
+    fig.append(el('p', 'media__note', t('media.splatNote')));
   } else if (m.kind === 'model' || m.kind === 'sculpture') {
     const canvas = el('canvas', 'media__3d');
     fig.append(canvas);

@@ -444,6 +444,12 @@ output { color: var(--paper); }
 .g-looks .g-feel { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
 .g-looks .g-feel__card b { font-size: 21px; }
 .g-colours { display: flex; gap: 10px; }
+/* Placing things by hand, and ready-made arrangements */
+.g-place { margin-top: 12px; }
+.g-range__name { min-width: 5.5em; }
+.g-arrange { margin: 4px 0 12px; }
+.media__note { font-style: italic; color: var(--muted); margin: 0; }
+body.is-placing #stage { cursor: grab; }
 .g-colours input { width: 56px; height: 44px; border: 1px solid var(--faint); border-radius: 10px; background: none; padding: 2px; cursor: pointer; }
 .g-finish { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .g-rec { width: min(420px, 100%); }

@@ -9,7 +9,22 @@ import { SHOWABLE, inkColors, embedFor, constellationLayout, melodyFreq, ctx, pl
 
 const PAPER = '#ece4d4';
 const FONT = '"Cormorant Garamond", Georgia, serif';
-const textures = new Set();
+// Every exhibition keeps its own textures and media so it can free them all when it
+// goes. Pieces are made synchronously inside createExhibit, so they pick up the
+// current bag then; loads that finish after the exhibition is gone are freed on arrival.
+let bag = { textures: new Set(), media: new Set(), gone: false };
+const keep = (t) => { bag.textures.add(t); return t; };
+
+function freeObject(obj) {
+  obj.traverse((o) => {
+    o.geometry?.dispose();
+    for (const m of [].concat(o.material || [])) {
+      for (const v of Object.values(m)) if (v?.isTexture) v.dispose();
+      m.uniforms?.map?.value?.dispose?.();
+      m.dispose();
+    }
+  });
+}
 
 function onLayer(obj) {
   obj.traverse((o) => o.layers.set(1));
@@ -20,8 +35,7 @@ function tex(canvas) {
   const t = new THREE.CanvasTexture(canvas);
   t.colorSpace = THREE.SRGBColorSpace;
   t.anisotropy = 4;
-  textures.add(t);
-  return t;
+  return keep(t);
 }
 
 // Words as textures, measured so planes keep their proportions.
@@ -56,16 +70,32 @@ function frameLines(w, h, color, opacity = 0.5) {
 
 // ---- one piece of the exhibition per media kind -------------------------------
 
+// Pictures hang a few paces away; anything over 1024 px only costs graphics memory.
+const MAX_SIDE = 1024;
+function fit(t) {
+  const img = t.image, w = img.width, h = img.height;
+  if (Math.max(w, h) <= MAX_SIDE) return t;
+  const k = MAX_SIDE / Math.max(w, h);
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * k); c.height = Math.round(h * k);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  t.dispose();
+  return new THREE.CanvasTexture(c);
+}
+
 function imagePiece(src, size, ink) {
   const group = new THREE.Group();
   const holder = frameLines(size, size * 0.75, ink[1], 0.4);
   group.add(holder);
+  const b = bag;
   new THREE.TextureLoader().load(src, (t) => {
+    if (b.gone) { t.dispose(); return; }
+    t = fit(t);
     t.colorSpace = THREE.SRGBColorSpace;
-    textures.add(t);
+    b.textures.add(t);
     const k = t.image.height / t.image.width;
     const w = k > 1 ? size / k : size, h = w * k;
-    group.remove(holder);
+    group.remove(holder); holder.geometry.dispose(); holder.material.dispose();
     group.add(onLayer(plane(t, w, h, 0.92)), onLayer(frameLines(w * 1.04, h * 1.04, ink[1], 0.35)));
   });
   return { group };
@@ -176,16 +206,18 @@ function videoPiece(src, size, ink) {
   if (!embed && (/\.(mp4|webm|mov)(\?|$)/i.test(src) || src.startsWith('data:video/'))) {
     const v = Object.assign(document.createElement('video'), { src, muted: true, loop: true, playsInline: true, crossOrigin: 'anonymous', autoplay: true });
     v.play().catch(() => {});
-    const t = new THREE.VideoTexture(v);
+    bag.media.add(v);
+    const t = keep(new THREE.VideoTexture(v));
     t.colorSpace = THREE.SRGBColorSpace;
-    textures.add(t);
     group.add(plane(t, size, h, 0.92));
     group.userData.video = v;
   } else {
     const id = embed?.url.match(/youtube-nocookie\.com\/embed\/([\w-]+)/)?.[1];
     if (id) {
+      const b = bag;
       new THREE.TextureLoader().load(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, (t) => {
-        t.colorSpace = THREE.SRGBColorSpace; textures.add(t); group.add(onLayer(plane(t, size, h, 0.85)));
+        if (b.gone) { t.dispose(); return; }
+        t.colorSpace = THREE.SRGBColorSpace; b.textures.add(t); group.add(onLayer(plane(t, size, h, 0.85)));
       });
     }
     // A play mark, drawn in lines.
@@ -196,22 +228,127 @@ function videoPiece(src, size, ink) {
     group.add(tri);
   }
   group.add(frameLines(size * 1.04, h * 1.04, ink[1], 0.35));
-  return { group, dispose() { group.userData.video?.pause(); } };
+  return { group };
+}
+
+// Heavy pieces (3D models, splats) load only while someone is near the plot and are
+// freed again when they leave; from afar a faint frame keeps their place.
+function lazyPiece(size, load) {
+  const group = new THREE.Group();
+  const proxy = boxLines(size);
+  group.add(proxy);
+  const b = bag;
+  let obj = null, want = false, busy = false;
+  const piece = {
+    group, solid: true,
+    lazy: {
+      load() {
+        want = true;
+        if (obj || busy) return;
+        busy = true;
+        load().then((o) => {
+          busy = false;
+          if (!o) return;
+          if (b.gone || !want) return o.free();
+          obj = o;
+          group.add(onLayer(o.object));
+          proxy.visible = false;
+        }).catch(() => { busy = false; });
+      },
+      unload() {
+        want = false;
+        if (!obj) return;
+        obj.object.removeFromParent();
+        obj.free();
+        obj = null;
+        proxy.visible = true;
+      },
+    },
+    setOpacity(a) { obj?.setOpacity?.(a); },
+    dispose() { piece.lazy.unload(); },
+  };
+  return piece;
+}
+
+function boxLines(size) {
+  const h = size / 2;
+  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(size, size, size));
+  const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: PAPER, transparent: true, opacity: 0.12, depthWrite: false }));
+  l.position.y = 0;
+  l.userData.h = h;
+  return l;
+}
+
+// Fit an object into a cube of `size`, centred on the holder.
+function fitInto(obj, box, size) {
+  const sz = box.getSize(new THREE.Vector3());
+  const k = size / (Math.max(sz.x, sz.y, sz.z) || 1);
+  obj.scale.multiplyScalar(k);
+  const c = box.getCenter(new THREE.Vector3()).applyQuaternion(obj.quaternion).multiplyScalar(k);
+  obj.position.sub(c);
+}
+
+async function bytesOf(src) {
+  return new Uint8Array(await (await fetch(src)).arrayBuffer());
 }
 
 function modelPiece(src, size) {
-  const group = new THREE.Group();
-  if (embedFor(src)) return { group }; // Sketchfab pages cannot stand in the city; they play in the panel.
-  import('three/addons/loaders/GLTFLoader.js').then(({ GLTFLoader }) => new GLTFLoader().loadAsync(src)).then((gltf) => {
-    const obj = gltf.scene;
-    const box = new THREE.Box3().setFromObject(obj), sz = box.getSize(new THREE.Vector3());
-    const k = size / (Math.max(sz.x, sz.y, sz.z) || 1);
-    obj.scale.setScalar(k);
-    obj.position.copy(box.getCenter(new THREE.Vector3())).multiplyScalar(-k);
-    const light = new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2);
-    group.add(onLayer(obj), onLayer(light));
-  }).catch(() => {});
-  return { group, spin: true };
+  if (embedFor(src)) return { group: new THREE.Group() }; // Sketchfab pages cannot stand in the city; they play in the panel.
+  return lazyPiece(size, async () => {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    const loader = new GLTFLoader();
+    const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    const gltf = await loader.loadAsync(src);
+    const obj = new THREE.Group();
+    obj.add(gltf.scene, new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2));
+    fitInto(gltf.scene, new THREE.Box3().setFromObject(gltf.scene), size);
+    const mats = [];
+    gltf.scene.traverse((o) => { for (const m of [].concat(o.material || [])) { m.transparent = true; mats.push(m); } });
+    return { object: obj, free: () => freeObject(obj), setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }) };
+  });
+}
+
+// Gaussian splats (World Labs exports and the like) through Spark, World Labs' own
+// renderer. It joins the scene once, on the layer drawn after the glow.
+let host = null, spark = null, sparkView = null;
+export function useEngine(engine) { host = engine; }
+function sparkLib() {
+  spark ||= import('@sparkjsdev/spark').then((S) => {
+    sparkView = new S.SparkRenderer({ renderer: host.renderer });
+    sparkView.layers.set(1);
+    host.scene.add(sparkView);
+    return S;
+  });
+  return spark;
+}
+// Spark redraws only when the camera or a splat changes, so a splat taken away would
+// linger while the view stands still: clear, and let the ones that remain draw again.
+function sparkForget(S) {
+  sparkView?.clearSplats();
+  host.scene.traverse((o) => { if (o instanceof S.SplatMesh) o.updateVersion(); });
+}
+const SPLAT_TYPES = { 'application/x-spz': 'spz', 'application/x-ply': 'ply', 'application/x-splat': 'splat', 'application/x-ksplat': 'ksplat', 'application/x-sog': 'pcsogszip' };
+export function splatType(src) {
+  if (src.startsWith('data:')) return SPLAT_TYPES[src.slice(5, src.indexOf(';'))];
+  const ext = (src.split(/[?#]/)[0].match(/\.(spz|ply|splat|ksplat|sog)$/i) || [])[1]?.toLowerCase();
+  return ext === 'sog' ? 'pcsogszip' : ext;
+}
+
+function splatPiece(src, size, show) {
+  if (!host) return null;
+  return lazyPiece(size, async () => {
+    const S = await sparkLib();
+    const fileType = splatType(src);
+    const mesh = new S.SplatMesh(src.startsWith('data:') ? { fileBytes: await bytesOf(src), fileType } : { url: src, fileType });
+    await mesh.initialized;
+    // Most splat files (World Labs included) are stored upside down for three.js.
+    if (!show?.flip) mesh.quaternion.set(1, 0, 0, 0);
+    const obj = new THREE.Group();
+    obj.add(mesh);
+    fitInto(mesh, mesh.getBoundingBox(true), size);
+    return { object: obj, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
+  });
 }
 
 function sculpturePiece(build, size, palette) {
@@ -366,6 +503,7 @@ function makePiece(m, size, palette, ink) {
     case 'audio': return audioPiece(size, ink);
     case 'video': return videoPiece(m.src, size, ink);
     case 'model': return modelPiece(m.src, size);
+    case 'splat': return splatPiece(m.src, size, m.show);
     case 'sculpture': return sculpturePiece(m.build, size, palette);
     case 'poem': return poemPiece(m.poem, size, ink);
     case 'constellation': return constellationPiece(m.constellation, size, ink);
@@ -395,55 +533,115 @@ export function exhibitTop(world) {
 
 // `mid` is the height (world units) the unplaced pieces circle at.
 export function createExhibit(world, U, mid) {
+  const own = bag = { textures: new Set(), media: new Set(), gone: false };
   const group = new THREE.Group();
   const ink = inkColors(world.palette);
   const items = exhibitItems(world);
-  const free = items.filter((m) => !m.show?.at);
   const pieces = [];
-  items.forEach((m) => {
-    const show = m.show === true ? { size: 0.3, motion: 'orbit' } : m.show;
-    const size = show.size * U;
+  items.forEach((m, index) => {
+    const size = (m.show === true ? 0.3 : m.show.size) * U;
     const piece = makePiece(m, size, world.palette, ink);
     if (!piece) return;
     const holder = new THREE.Group();
     holder.add(piece.group);
-    let base, angle = 0;
-    if (show.at) {
-      base = new THREE.Vector3(show.at[0], show.at[1], show.at[2]).multiplyScalar(U);
-    } else {
-      // Unplaced pieces circle the plot between the ground and the top.
-      const i = free.indexOf(m), n = free.length;
-      angle = (i / n) * Math.PI * 2 + 0.4;
-      base = new THREE.Vector3(0, Math.max(mid, U * 0.25) + (i % 2 ? U * 0.1 : -U * 0.04), 0);
-    }
     group.add(onLayer(holder));
-    pieces.push({ piece, holder, base, angle, motion: show.at ? show.motion : 'orbit', radius: U * 0.42, seed: Math.random() * 10 });
+    // Every piece keeps its own clock and smoothed sense of a visitor nearby;
+    // seeds come from its place in the list, so the motion is the same for everyone.
+    pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0 });
   });
+  // Where each piece stands and how it moves: read again whenever the maker moves it,
+  // without rebuilding (and so without reloading) anything.
+  const place = (list) => {
+    const free = list.filter((m) => !m.show?.at);
+    for (const p of pieces) {
+      const m = list[p.index];
+      const show = m.show === true ? { size: 0.3, motion: 'orbit' } : m.show;
+      p.motion = show.at ? show.motion : 'orbit';
+      p.nearMode = show.near || 'none';
+      p.turn = typeof show.turn === 'number' ? show.turn : null;
+      p.scale = (show.size * U) / p.size0;
+      if (show.at) {
+        p.base = new THREE.Vector3(show.at[0], show.at[1], show.at[2]).multiplyScalar(U);
+        p.angle = Math.atan2(p.base.z, p.base.x);
+        p.radius = Math.hypot(p.base.x, p.base.z) || U * 0.3;
+      } else {
+        // Unplaced pieces circle the plot between the ground and the top.
+        const i = free.indexOf(m), n = free.length;
+        p.angle = (i / n) * Math.PI * 2 + 0.4;
+        p.radius = U * 0.42;
+        p.base = new THREE.Vector3(0, Math.max(mid, U * 0.25) + (i % 2 ? U * 0.1 : -U * 0.04), 0);
+      }
+    }
+  };
+  place(items);
   const look = new THREE.Vector3();
+  const ease = (x) => x * x * (3 - 2 * x);
   return {
     group,
-    update(t, dt, camera, { audible = false, presence = 0 } = {}) {
+    // The same world with pieces moved, resized or given new motion: true if it could be applied in place.
+    relayout(w) {
+      const list = exhibitItems(w);
+      if (list.length !== items.length || list.some((m, i) => m.kind !== items[i].kind || m.src !== items[i].src)) return false;
+      place(list);
+      return true;
+    },
+    holderOf(index) { return pieces.find((p) => p.index === index)?.holder; },
+    // Far from everyone: let heavy pieces go.
+    sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
+    update(t, dt, camera, { audible = false, presence = 0, dist = 0 } = {}) {
       for (const p of pieces) {
+        if (p.piece.lazy && dist < 45) p.piece.lazy.load();
         const h = p.holder;
+        p.near += (presence - p.near) * Math.min(1, dt * 1.5);
+        const near = ease(Math.max(0, Math.min(1, p.near)));
+        // 'wake': stillness from afar, motion as you come; the others keep the shared clock.
+        p.clock = p.nearMode === 'wake' ? p.clock + dt * (0.04 + 0.96 * near) : t;
+        const c = p.clock + p.seed;
+        let k = p.scale;
         if (p.motion === 'orbit') {
-          const a = p.angle + t * 0.03;
-          h.position.set(Math.cos(a) * p.radius, p.base.y + Math.sin(t * 0.4 + p.seed) * U * 0.02, Math.sin(a) * p.radius);
+          const a = p.angle + p.clock * 0.04;
+          h.position.set(Math.cos(a) * p.radius, p.base.y + Math.sin(c * 0.4) * U * 0.02, Math.sin(a) * p.radius);
         } else {
           h.position.copy(p.base);
-          if (p.motion === 'float') h.position.y += Math.sin(t * 0.5 + p.seed) * U * 0.015;
+          if (p.motion === 'float') h.position.y += Math.sin(c * 0.55) * U * 0.018;
+          if (p.motion === 'breathe') k *= 1 + 0.045 * Math.sin(c * 0.8);
         }
-        // Flat pieces turn to face you around the vertical axis; solid ones turn on their own.
-        if (p.piece.spin || p.motion === 'spin') h.rotation.y = t * 0.25 + p.seed;
+        // 'rise': resting low and small until someone comes, then lifting into place.
+        if (p.nearMode === 'rise') {
+          const ground = p.size0 * p.scale * 0.3;
+          h.position.y = ground + (h.position.y - ground) * near;
+          k *= 0.55 + 0.45 * near;
+        }
+        // 'appear': not there from afar; grows and brightens as you come close.
+        if (p.nearMode === 'appear') { k *= Math.max(0.001, near); p.piece.setOpacity?.(near); }
+        h.scale.setScalar(k);
+        // Facing: a set turn, slowly sway or spin around it, or (unset) face whoever looks.
+        let ry;
+        if (p.motion === 'spin' || ((p.piece.spin || p.piece.solid) && p.turn === null)) ry = (p.turn || 0) + c * 0.25;
+        else if (p.turn !== null) ry = p.turn + (p.motion === 'sway' ? Math.sin(c * 0.5) * 0.35 : 0);
         else if (!p.piece.billboardChildren && camera) {
           h.getWorldPosition(look);
-          h.rotation.y = Math.atan2(camera.position.x - look.x, camera.position.z - look.z);
+          ry = Math.atan2(camera.position.x - look.x, camera.position.z - look.z);
+        } else ry = 0;
+        // 'turn': turns to face the visitor as they approach.
+        if (p.nearMode === 'turn' && camera) {
+          h.getWorldPosition(look);
+          const face = Math.atan2(camera.position.x - look.x, camera.position.z - look.z);
+          let d = face - ry; d = Math.atan2(Math.sin(d), Math.cos(d));
+          ry += d * near;
         }
+        h.rotation.y = ry;
         p.piece.update?.(t, dt, { camera, audible, presence });
       }
     },
     dispose() {
+      own.gone = true;
       for (const p of pieces) p.piece.dispose?.();
-      group.traverse((o) => { o.geometry?.dispose(); if (o.material) { o.material.map?.dispose(); o.material.uniforms?.map?.value?.dispose(); o.material.dispose(); } });
+      // A paused video still holds its decoder and buffers; letting go of the source frees them.
+      for (const v of own.media) { v.pause(); v.removeAttribute('src'); v.load(); }
+      freeObject(group);
+      for (const t of own.textures) t.dispose();
+      own.textures.clear(); own.media.clear();
       group.removeFromParent();
     },
   };

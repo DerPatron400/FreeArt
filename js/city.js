@@ -90,6 +90,7 @@ export const PLOTS = (() => {
 })();
 const PLOT_BY_KEY = new Map(PLOTS.map((p) => [key(p.x, p.z), p]));
 export const plotNumber = (x, z) => PLOT_BY_KEY.get(key(x, z))?.n;
+export const plotCell = (x, z) => PLOT_BY_KEY.get(key(x, z));
 
 // The plot under a point on the ground, if any (margin widens its footprint).
 export function plotAt(x, z, margin = 0) {
@@ -316,7 +317,8 @@ export class City {
       const place = formPlacement(world, U, p.h);
       form.scale.setScalar(place.scale);
       form.position.copy(place.pos);
-      form.rotation.y = p.n;
+      const drawn = world.form.strokes?.length > 0; // stars placed by hand keep the orientation they were drawn in
+      form.rotation.y = drawn ? 0 : p.n;
       if (world.form.type === 'spiral') form.rotation.x = 0.45;
       anchor.add(form);
       this.group.add(anchor);
@@ -330,7 +332,7 @@ export class City {
       label.addEventListener('pointerleave', () => { this.labelHover = null; });
       label.hidden = !this.active;
       this.labelsRoot.append(label);
-      const it = { world, plot: p, anchor, form, build, exhibit, label, hover: 0, screen: {} };
+      const it = { world, plot: p, anchor, form, build, exhibit, label, drawn, hover: 0, screen: {} };
       this.items.push(it);
       this.byKey.set(key(p.x, p.z), it);
     }
@@ -529,12 +531,20 @@ export class City {
       const u = it.form.userData.uniforms;
       u.uTime.value = t;
       u.uReveal.value = Math.max(u.uReveal.value, reveal);
+      // Once gathered, worlds outside the view are skipped by the graphics card.
+      if (reveal >= 1 && !it.culled) {
+        it.culled = true;
+        it.form.geometry.boundingSphere.radius += 0.8; // room for the breathing noise and hover swell
+        it.form.frustumCulled = true;
+      }
       const isHover = hovered && hovered === it.plot;
       it.hover = lerp(it.hover, isHover || this.selected === it.plot ? 1 : 0, 1 - Math.pow(0.001, dt));
       u.uHover.value = it.hover;
-      it.form.rotation.y += dt * 0.08;
+      if (!it.drawn) it.form.rotation.y += dt * 0.08;
       // The exhibition plays while you are near; the one you stand in can be heard.
-      const far = e.camera.position.distanceTo(it.anchor.position) > 70;
+      const camDist = e.camera.position.distanceTo(it.anchor.position);
+      const far = camDist > 70;
+      if (far && it.exhibit.group.visible) it.exhibit.sleep(); // heavy models and splats let go when nobody is near
       it.exhibit.group.visible = !far;
       if (!far) {
         // Presence: how close a visitor is. Some exhibitions only gather when someone comes.
@@ -543,7 +553,7 @@ export class City {
           const d = Math.hypot(this.walker.pos.x - it.anchor.position.x, this.walker.pos.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
         }
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence });
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, dist: camDist });
       }
 
       if (it.label.hidden) continue;

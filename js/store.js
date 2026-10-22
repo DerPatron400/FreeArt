@@ -79,6 +79,9 @@ export function normalizeWorld(raw) {
 
 // Stars placed by hand: strokes of points in the form's own space (about -2 to 2).
 export const MAX_STROKES = 120, MAX_STROKE_POINTS = 400;
+// How the stars of a stroke behave: still stars, a flowing stream, a twisting ribbon
+// of silk, a comet that thickens towards its head, or a slow drifting mist.
+export const BRUSHES = ['stars', 'stream', 'ribbon', 'comet', 'mist'];
 function strokesOf(form) {
   if (!Array.isArray(form?.strokes)) return {};
   const r = (v) => Math.round(clamp(v, -2.2, 2.2) * 1000) / 1000;
@@ -86,7 +89,9 @@ function strokesOf(form) {
     const pts = (Array.isArray(st?.pts) ? st.pts : []).slice(0, MAX_STROKE_POINTS)
       .filter((p) => Array.isArray(p) && p.length === 3 && p.every((v) => typeof v === 'number' && isFinite(v))).map((p) => p.map(r));
     const tone = [0, 1, 2].includes(st?.tone) ? st.tone : 2;
-    return { pts, spread: typeof st?.spread === 'number' && isFinite(st.spread) ? Math.round(clamp(st.spread, 0.005, 0.5) * 1000) / 1000 : 0.06, tone };
+    const out = { pts, spread: typeof st?.spread === 'number' && isFinite(st.spread) ? Math.round(clamp(st.spread, 0.005, 0.5) * 1000) / 1000 : 0.06, tone };
+    if (BRUSHES.includes(st?.style) && st.style !== 'stars') out.style = st.style;
+    return out;
   }).filter((st) => st.pts.length);
   return strokes.length ? { strokes } : {};
 }

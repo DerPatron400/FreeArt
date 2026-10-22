@@ -7,7 +7,7 @@ export const PLOTS = 120;
 export const QUOTA_R2 = 75e6; // 10 GB of R2, 1 GB kept in reserve, / 120 plots
 export const QUOTA_D1 = 35e6; // 5 GB of D1, with room for the worlds themselves
 export const WORLD_MAX = 1e6; // a world's own JSON (texts, drawings, stars by hand)
-export const FILE_MAX = { image: 2e6, audio: 8e6, video: 40e6 };
+export const FILE_MAX = { image: 2e6, audio: 8e6, video: 40e6, model: 25e6, splat: 30e6 };
 export const CREATES_PER_DAY = 5; // new worlds per visitor (by hashed IP) per day
 const CHUNK = 1.5e6; // D1 values stay well under its 2 MB limit
 
@@ -16,6 +16,10 @@ export const TYPES = {
   'audio/webm': ['audio', 'webm'], 'audio/ogg': ['audio', 'ogg'], 'audio/mpeg': ['audio', 'mp3'], 'audio/mp4': ['audio', 'm4a'],
   'audio/aac': ['audio', 'aac'], 'audio/wav': ['audio', 'wav'], 'audio/x-wav': ['audio', 'wav'], 'audio/x-m4a': ['audio', 'm4a'],
   'video/mp4': ['video', 'mp4'], 'video/webm': ['video', 'webm'], 'video/quicktime': ['video', 'mov'],
+  'model/gltf-binary': ['model', 'glb'],
+  // Gaussian splats have no registered types; the studio labels them by file ending.
+  'application/x-spz': ['splat', 'spz'], 'application/x-ply': ['splat', 'ply'], 'application/x-splat': ['splat', 'splat'],
+  'application/x-ksplat': ['splat', 'ksplat'], 'application/x-sog': ['splat', 'sog'],
 };
 
 export const json = (data, status = 200, headers = {}) => new Response(JSON.stringify(data), {

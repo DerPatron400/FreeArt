@@ -166,11 +166,19 @@ uniform vec3 uC0;
 uniform vec3 uC1;
 uniform vec3 uC2;
 attribute vec4 aRand;
+attribute vec4 aFlow; // flowing brushes: the stretch a star travels (xyz), where it starts on it (w)
 varying vec3 vColor;
 varying float vAlpha;
 ${NOISE}
 void main() {
   vec3 p = position;
+  // Flowing brushes: slide along the stroke, fading in and out, so the line streams.
+  float flowFade = 1.0;
+  if (dot(aFlow.xyz, aFlow.xyz) > 0.0) {
+    float ph = fract(aFlow.w + uTime * (0.18 + 0.5 * uEnergy) + aRand.y * 0.3);
+    p += aFlow.xyz * (ph - aFlow.w);
+    flowFade = 0.25 + 0.75 * sin(3.14159 * ph);
+  }
   float t = uTime * (0.06 + 0.12 * uEnergy);
   vec3 q = p * 0.75;
   vec3 n = vec3(snoise(q + vec3(t, 0.0, 0.0)), snoise(q + vec3(0.0, t + 31.0, 0.0)), snoise(q + vec3(0.0, 0.0, t + 67.0)));
@@ -191,7 +199,7 @@ void main() {
   vec3 c = mix(uC0, uC1, smoothstep(0.05, 0.6, aRand.x * 0.8 + m * 0.35));
   c = mix(c, uC2, smoothstep(0.78, 1.05, aRand.x * 0.9 + m * 0.25));
   vColor = c;
-  vAlpha = (0.25 + 0.75 * r) * (0.45 + 0.55 * aRand.z) * (1.0 + uHover * 0.8);
+  vAlpha = (0.25 + 0.75 * r) * (0.45 + 0.55 * aRand.z) * (1.0 + uHover * 0.8) * flowFade;
   vAlpha *= smoothstep(0.4, 2.5, -mv.z); // fade motes that drift past the lens
 }`;
 
@@ -219,39 +227,75 @@ export function buildGeometry(type, count, seed, strokes) {
   });
   for (let i = 0; i < rand.length; i++) rand[i] = r();
   // Stars placed by hand take over a share of the particles, spread along each stroke.
-  if (strokes?.length) {
-    const segs = [];
-    let total = 0;
-    for (const st of strokes) {
-      const p = st.pts;
-      if (p.length === 1) { segs.push({ a: p[0], b: p[0], len: 0.04, st }); total += 0.04; }
-      for (let k = 1; k < p.length; k++) {
-        const len = Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1], p[k][2] - p[k - 1][2]) + 0.002;
-        segs.push({ a: p[k - 1], b: p[k], len, st });
-        total += len;
-      }
-    }
-    const share = type === 'hand' ? 0.92 : 0.5;
-    const k0 = Math.floor(count * (1 - share));
-    let si = 0, acc = segs[0].len;
-    for (let i = k0; i < count; i++) {
-      // Walk the strokes evenly, so long strokes get more stars than short ones.
-      const want = ((i - k0 + r()) / (count - k0)) * total;
-      while (acc < want && si < segs.length - 1) acc += segs[++si].len;
-      const { a, b, st } = segs[si];
-      const t = r(), sp = st.spread * (0.35 + Math.abs(gauss(r)));
-      pos[i * 3] = a[0] + (b[0] - a[0]) * t + gauss(r) * sp;
-      pos[i * 3 + 1] = a[1] + (b[1] - a[1]) * t + gauss(r) * sp;
-      pos[i * 3 + 2] = a[2] + (b[2] - a[2]) * t + gauss(r) * sp;
-      // The colour channel (aRand.x picks the palette tone in the shader): lean towards the stroke's tone.
-      rand[i * 4] = Math.min(0.999, Math.max(0, st.tone / 2 * 0.8 + r() * 0.2));
-    }
-  }
+  const flow = strokes?.length ? new Float32Array(count * 4) : null;
+  if (flow) placeStrokes(strokes, type === 'hand' ? 0.92 : 0.5, count, r, pos, rand, flow);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aRand', new THREE.BufferAttribute(rand, 4));
+  if (flow) g.setAttribute('aFlow', new THREE.BufferAttribute(flow, 4));
   g.computeBoundingSphere();
   return g;
+}
+
+// Each brush lays its stars along the stroke in its own way. Flowing brushes also
+// give every star a short stretch of the stroke to travel (aFlow: the stretch, and
+// where on it the star starts); the shader slides it along and fades it in and out,
+// so the stroke seems to stream.
+const FLOWING = { stream: 1, ribbon: 1, comet: 1, mist: 0.45 };
+function placeStrokes(strokes, share, count, r, pos, rand, flow) {
+  const paths = strokes.map((st) => {
+    const p = st.pts, acc = [0];
+    for (let k = 1; k < p.length; k++) acc.push(acc[k - 1] + Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1], p[k][2] - p[k - 1][2]));
+    return { st, p, acc, len: Math.max(acc[acc.length - 1], 0.04) };
+  });
+  const total = paths.reduce((a, q) => a + q.len, 0);
+  const at = (q, s, out) => {
+    const { p, acc } = q;
+    if (p.length === 1 || s <= 0) return out.set(...p[0]);
+    let k = 1;
+    while (k < p.length - 1 && acc[k] < s) k++;
+    const f = Math.min(1, (s - acc[k - 1]) / (acc[k] - acc[k - 1] || 1));
+    return out.set(p[k - 1][0] + (p[k][0] - p[k - 1][0]) * f, p[k - 1][1] + (p[k][1] - p[k - 1][1]) * f, p[k - 1][2] + (p[k][2] - p[k - 1][2]) * f);
+  };
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), seg = new THREE.Vector3(), n1 = new THREE.Vector3(), n2 = new THREE.Vector3(), off = new THREE.Vector3();
+  const UP = new THREE.Vector3(0, 1, 0), SIDE = new THREE.Vector3(1, 0, 0);
+  const k0 = Math.floor(count * (1 - share));
+  let qi = 0, before = 0;
+  for (let i = k0; i < count; i++) {
+    // Walk the strokes evenly, so long strokes get more stars than short ones.
+    const want = ((i - k0 + r()) / (count - k0)) * total;
+    while (qi < paths.length - 1 && before + paths[qi].len < want) before += paths[qi++].len;
+    const q = paths[qi], st = q.st, style = st.style || 'stars';
+    let s = Math.min(q.len, Math.max(0, want - before));
+    if (style === 'comet') s = q.len * Math.sqrt(s / q.len); // thicker towards the head
+    // A short stretch of the stroke around this star.
+    const L = Math.min(0.24, q.len);
+    const s0 = Math.min(s, q.len - L);
+    at(q, s0, a); at(q, s0 + L, b);
+    seg.subVectors(b, a);
+    const t = r();
+    const sp = st.spread * (0.35 + Math.abs(gauss(r)));
+    const g = () => gauss(r);
+    if (style === 'ribbon') {
+      // A band of silk that turns slowly about its own line.
+      const tan = seg.lengthSq() > 1e-8 ? seg.clone().normalize() : SIDE;
+      n1.crossVectors(tan, Math.abs(tan.y) > 0.9 ? SIDE : UP).normalize();
+      n2.crossVectors(tan, n1);
+      const th = s * 3.2;
+      off.copy(n1).multiplyScalar(Math.cos(th)).addScaledVector(n2, Math.sin(th)).multiplyScalar((r() * 2 - 1) * st.spread * 2.6);
+      off.x += g() * st.spread * 0.08; off.y += g() * st.spread * 0.08; off.z += g() * st.spread * 0.08;
+    } else {
+      const k = style === 'stream' ? 0.45 : style === 'mist' ? 2.6 : style === 'comet' ? 0.15 + 1.5 * (s / q.len) ** 2 : 1;
+      off.set(g() * sp * k, g() * sp * k, g() * sp * k);
+    }
+    pos[i * 3] = a.x + seg.x * t + off.x;
+    pos[i * 3 + 1] = a.y + seg.y * t + off.y;
+    pos[i * 3 + 2] = a.z + seg.z * t + off.z;
+    const speed = FLOWING[style] || 0;
+    flow[i * 4] = seg.x * speed; flow[i * 4 + 1] = seg.y * speed; flow[i * 4 + 2] = seg.z * speed; flow[i * 4 + 3] = t;
+    // The colour channel (aRand.x picks the palette tone in the shader): lean towards the stroke's tone.
+    rand[i * 4] = Math.min(0.999, Math.max(0, st.tone / 2 * 0.8 + r() * 0.2));
+  }
 }
 
 export function createForm(world, { lod = 1, size = 1 } = {}) {

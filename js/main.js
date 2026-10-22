@@ -1,7 +1,8 @@
 // Free Art: routing between the threshold, the city, a world, and the workshop.
 import { Engine } from './engine.js';
-import { City, plotNumber } from './city.js';
+import { City, plotNumber, plotCell } from './city.js';
 import { WorldView } from './worldview.js';
+import { useEngine } from './exhibit.js';
 import { Editor } from './editor.js';
 import { Sound } from './audio.js';
 import { createDust } from './form.js';
@@ -26,6 +27,7 @@ for (const l of LANGS) {
 $('lang-select').addEventListener('change', (e) => setLang(e.target.value));
 
 const engine = new Engine($('stage'));
+useEngine(engine); // splats draw through the same renderer
 window.freeart = { engine }; // handy for poking at the scene from the console
 const sound = new Sound();
 const labels = $('labels');
@@ -52,6 +54,9 @@ Object.assign(window.freeart, { city, worldView });
 const editor = new Editor({
   onChange: (w) => worldView.setWorld(w),
   onPaint: (on, opts) => worldView.setPainting(on, opts),
+  onPlace: (opts) => worldView.setPlacing(opts),
+  onNear: (v) => worldView.setNearPreview(v),
+  getRoom: () => worldView.room,
   onRelease: (w) => release(w),
   onDelete: async (id) => {
     const w = worlds.find((x) => x.id === id);
@@ -343,7 +348,7 @@ function route() {
     view = 'create';
     currentWorldId = null;
     const w = editor.open(seed, { editingId, plot: plot && { x: plot.x, z: plot.z }, plotLabel: plot ? t('plot.n', { n: roman(plotNumber(plot.x, plot.z)) }) : t('plot.none') });
-    worldView.show(w, { preview: true });
+    worldView.show(w, { preview: true, plot: plot && plotCell(plot.x, plot.z) });
     sound.setWorld(w);
     setHint('');
     document.title = t('title.create');

@@ -79,7 +79,7 @@ export async function publish(world, { onProgress = () => {} } = {}) {
   return { world: w, key, created, skipped };
 }
 
-const KIND_NAMES = { image: t('kind.aPicture'), audio: t('kind.aSound'), video: t('kind.aVideo') };
+const KIND_NAMES = { image: t('kind.aPicture'), audio: t('kind.aSound'), video: t('kind.aVideo'), model: t('kind.aModel'), splat: t('kind.aSplat') };
 
 export async function unpublish(id) {
   const key = keyFor(id);
