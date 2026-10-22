@@ -47,6 +47,29 @@ async function fileAs(file, type) {
   return 'data:' + type + data.slice(data.indexOf(';base64,'));
 }
 
+// FBX is turned into .glb right here, so the city only ever loads one kind of model.
+// Textures packed inside the FBX come along; animations are kept.
+async function fbxToGlb(file) {
+  const [{ FBXLoader }, { GLTFExporter }] = await Promise.all([
+    import('three/addons/loaders/FBXLoader.js'), import('three/addons/exporters/GLTFExporter.js')]);
+  const obj = new FBXLoader().parse(await file.arrayBuffer(), '');
+  // Embedded pictures decode in the background; wait for them (briefly) before packing.
+  const maps = [];
+  obj.traverse((o) => { for (const m of [].concat(o.material || [])) for (const v of Object.values(m)) if (v?.isTexture) maps.push(v); });
+  for (let i = 0; i < 40 && maps.some((t) => !t.image || t.image.complete === false); i++) await new Promise((r) => setTimeout(r, 100));
+  for (const t of maps) if (!t.image || t.image.complete === false || t.image.naturalWidth === 0) for (const k in t) if (k === 'image') t.image = null;
+  obj.traverse((o) => { for (const m of [].concat(o.material || [])) for (const [k, v] of Object.entries(m)) if (v?.isTexture && !v.image) m[k] = null; });
+  const glb = await new GLTFExporter().parseAsync(obj, { binary: true, animations: obj.animations || [], maxTextureSize: 2048 });
+  return new File([glb], file.name.replace(/\.fbx$/i, '.glb'), { type: 'model/gltf-binary' });
+}
+
+// A link to a world on dndai.app becomes the link to its splat (the 500k version:
+// detailed, and light enough for the city).
+function objectLink(src) {
+  const w = src.match(/^https:\/\/(?:www\.)?dndai\.app\/worlds\/([a-z0-9]+)/i);
+  return w ? `https://dzjg7lvewk7ln.cloudfront.net/worlds/${w[1]}/splats_500k.spz` : src;
+}
+
 function pickFiles(accept, multiple = false) {
   return new Promise((resolve) => {
     const input = el('input');
@@ -228,7 +251,10 @@ export class Guide {
     const list = this.things();
     if (list.length >= MAX_MEDIA) { toast(tr('g.maxThings', { n: MAX_MEDIA })); return false; }
     const room = this.getRoom();
-    m.show = solid ? { at: [0, Math.min(0.5, (room?.h ?? 1) * 0.4), 0], size: 0.45, motion: 'still', near: 'appear' } : list.filter((x) => x.show).length < SHOW_FIRST;
+    // A splat is often a whole place: it starts as wide as the plot, low, and simply there.
+    const wide = Math.round(Math.min(0.95, 1.9 * Math.min(room?.ax ?? 0.5, room?.az ?? 0.5)) * 100) / 100;
+    m.show = solid && m.kind === 'splat' ? { at: [0, Math.min(0.3, (room?.h ?? 1) * 0.35), 0], size: wide, motion: 'still', near: 'rise' }
+      : solid ? { at: [0, Math.min(0.5, (room?.h ?? 1) * 0.4), 0], size: 0.45, motion: 'still', near: 'appear' } : list.filter((x) => x.show).length < SHOW_FIRST;
     list.push(m);
     this.changed();
     this.drawThings();
@@ -306,7 +332,11 @@ export class Guide {
         }
       }],
       [tr('g.modelFile'), async () => {
-        for (const f of await pickFiles('.glb', true)) {
+        for (let f of await pickFiles('.glb,.fbx', true)) {
+          if (/\.fbx$/i.test(f.name)) {
+            toast(tr('g.packing', { name: f.name }), 8000);
+            try { f = await fbxToGlb(f); } catch { toast(tr('g.badObject', { name: f.name })); continue; }
+          }
           if (f.size > MODEL_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: MODEL_MAX / 1e6 })); continue; }
           if (!this.addThing({ kind: 'model', src: await fileAs(f, 'model/gltf-binary'), caption: f.name.replace(/\.\w+$/, '') }, true)) break;
         }
@@ -456,7 +486,7 @@ export class Guide {
       return l;
     };
     const height = slider(tr('g.height'), 0, Math.max(0.2, room.h), 0.01, s.at[1], (v) => { s.at = [s.at[0], round(v), s.at[2]]; });
-    const size = slider(tr('g.size'), 0.05, 1.2, 0.01, s.size, (v) => { s.size = round(v); });
+    const size = slider(tr('g.size'), 0.05, 1.5, 0.01, s.size, (v) => { s.size = round(v); });
     const turn = slider(tr('g.turnIt'), -180, 180, 1, typeof s.turn === 'number' ? Math.round(s.turn * 180 / Math.PI) : 0, (v) => { s.turn = round(v * Math.PI / 180); face.querySelector('input').checked = false; });
     const face = el('label', 'g-check');
     const fc = el('input');
@@ -617,8 +647,9 @@ export class Guide {
         const u = el('input', 'g-input g-input--small');
         Object.assign(u, { type: 'url', value: m.src || '', placeholder: tr('g.objectLinkPh') });
         u.addEventListener('change', () => {
-          m.src = u.value.trim();
-          m.kind = /\.(glb|gltf)(\?|#|$)/i.test(m.src) ? 'model' : 'splat';
+          m.src = objectLink(u.value.trim());
+          m.kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(m.src) ? 'model' : 'splat';
+          if (m.src !== u.value.trim()) u.value = m.src;
           this.changed(); redraw();
         });
         c.append(u);

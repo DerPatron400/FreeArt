@@ -89,8 +89,8 @@ Each `media` list holds up to 40 items. Every item can have a `caption`.
 | `image` | `src`: https URL, `worlds/<id>/file.jpg`, or a `data:image/...;base64` URL | add `alt` |
 | `video` | `src`: YouTube, Vimeo, or an .mp4/.webm file | embeds play in a sandboxed frame |
 | `audio` | `src`: SoundCloud, or an .mp3/.ogg file | |
-| `model` | `src`: a .glb/.gltf file, or a Sketchfab model page | shown on a turntable |
-| `splat` | `src`: a Gaussian splat (.spz, .ply, .splat, .ksplat, .sog), e.g. a World Labs export | loads only when a visitor is near; add `"flip": true` to `show` if it stands upside down |
+| `model` | `src`: a .glb/.gltf (or .fbx) file, or a Sketchfab model page | its first animation plays, if it has one |
+| `splat` | `src`: a Gaussian splat (.spz, .ply, .splat, .ksplat, .sog), e.g. a World Labs export | loads only when a visitor is near; whole scenes are fitted by their dense middle and the far sky is cropped; add `"flip": true` to `show` if it stands upside down |
 | `sketch` | `sketch: { view: [w, h], paths: [{ d, tone, width, fill }] }` | SVG path data; it draws itself in when shown |
 | `melody` | `melody: { steps, tempo, scale, root, loop, notes: [[step, degree, length]] }` | scale: pentatonic, major, minor, dorian; degree 0 = `root` Hz |
 | `sculpture` | `build: { pieces: [...] }` | the same pieces as the plot build, on a turntable |

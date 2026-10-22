@@ -265,6 +265,7 @@ function lazyPiece(size, load) {
       },
     },
     setOpacity(a) { obj?.setOpacity?.(a); },
+    update(t, dt) { obj?.update?.(dt); },
     dispose() { piece.lazy.unload(); },
   };
   return piece;
@@ -295,17 +296,28 @@ async function bytesOf(src) {
 function modelPiece(src, size) {
   if (embedFor(src)) return { group: new THREE.Group() }; // Sketchfab pages cannot stand in the city; they play in the panel.
   return lazyPiece(size, async () => {
-    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const loader = new GLTFLoader();
-    const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
-    loader.setMeshoptDecoder(MeshoptDecoder);
-    const gltf = await loader.loadAsync(src);
+    let scene, clips;
+    if (/\.fbx(\?|#|$)/i.test(src)) {
+      const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+      scene = await new FBXLoader().loadAsync(src);
+      clips = scene.animations;
+    } else {
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+      const loader = new GLTFLoader();
+      const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
+      loader.setMeshoptDecoder(MeshoptDecoder);
+      const gltf = await loader.loadAsync(src);
+      scene = gltf.scene; clips = gltf.animations;
+    }
     const obj = new THREE.Group();
-    obj.add(gltf.scene, new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2));
-    fitInto(gltf.scene, new THREE.Box3().setFromObject(gltf.scene), size);
+    obj.add(scene, new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2));
+    fitInto(scene, new THREE.Box3().setFromObject(scene), size);
     const mats = [];
-    gltf.scene.traverse((o) => { for (const m of [].concat(o.material || [])) { m.transparent = true; mats.push(m); } });
-    return { object: obj, free: () => freeObject(obj), setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }) };
+    scene.traverse((o) => { for (const m of [].concat(o.material || [])) { m.transparent = true; mats.push(m); } });
+    // A model that comes with its own animation plays its first one, gently looping.
+    const mixer = clips?.length ? new THREE.AnimationMixer(scene) : null;
+    mixer?.clipAction(clips[0]).play();
+    return { object: obj, free: () => freeObject(obj), setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }), update: (dt) => mixer?.update(dt) };
   });
 }
 
@@ -335,6 +347,27 @@ export function splatType(src) {
   return ext === 'sog' ? 'pcsogszip' : ext;
 }
 
+// Whole scenes (a World Labs room, a street) carry far stray splats and sky; fitting
+// their full bounds would shrink the place itself to a smear. Fit the dense middle
+// instead (10th to 90th percentile of the visible splats, with a margin); the rest may spill out softly.
+function coreBox(mesh) {
+  const ps = mesh.packedSplats;
+  if (!ps?.forEachSplat || !ps.numSplats) return null;
+  const every = Math.max(1, Math.floor(ps.numSplats / 20000));
+  const xs = [], ys = [], zs = [];
+  let i = 0;
+  ps.forEachSplat((n, c, sc, q, o) => { if (i++ % every === 0 && o > 0.1) { xs.push(c.x); ys.push(c.y); zs.push(c.z); } });
+  if (xs.length < 50) return null;
+  const at = (v, f) => v.sort((a, b) => a - b)[Math.floor(f * (v.length - 1))];
+  const lo = (v) => at(v, 0.1), hi = (v) => at(v, 0.9);
+  // A sky dome above a scene would set its height; keep it no taller than it is wide.
+  // (Files differ on which way is up, so the window sits around the middle splat.)
+  const wide = Math.max(hi(xs) - lo(xs), hi(zs) - lo(zs)), mid = at(ys, 0.5);
+  const y0 = Math.max(lo(ys), mid - wide / 2), y1 = Math.min(hi(ys), mid + wide / 2);
+  const box = new THREE.Box3(new THREE.Vector3(lo(xs), y0, lo(zs)), new THREE.Vector3(hi(xs), y1, hi(zs)));
+  return box.expandByVector(box.getSize(new THREE.Vector3()).multiplyScalar(0.12));
+}
+
 function splatPiece(src, size, show) {
   if (!host) return null;
   return lazyPiece(size, async () => {
@@ -346,7 +379,18 @@ function splatPiece(src, size, show) {
     if (!show?.flip) mesh.quaternion.set(1, 0, 0, 0);
     const obj = new THREE.Group();
     obj.add(mesh);
-    fitInto(mesh, mesh.getBoundingBox(true), size);
+    const core = coreBox(mesh);
+    fitInto(mesh, core || mesh.getBoundingBox(true), size);
+    // What lies beyond the scene's middle (sky, stray splats) fades out softly, so a
+    // whole place stays inside its plot instead of fogging the street.
+    if (core) {
+      const edit = new S.SplatEdit({ rgbaBlendMode: S.SplatEditRgbaBlendMode.MULTIPLY, softEdge: core.getSize(new THREE.Vector3()).length() * 0.04 });
+      const keep = new S.SplatEditSdf({ type: S.SplatEditSdfType.BOX, invert: true, opacity: 0 });
+      core.getCenter(keep.position);
+      core.getSize(keep.scale).multiplyScalar(0.5);
+      edit.add(keep);
+      mesh.add(edit);
+    }
     return { object: obj, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
   });
 }
