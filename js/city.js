@@ -543,7 +543,7 @@ export class City {
       if (!it.drawn) it.form.rotation.y += dt * 0.08;
       // The exhibition plays while you are near; the one you stand in can be heard.
       const camDist = e.camera.position.distanceTo(it.anchor.position);
-      const far = camDist > 70;
+      const far = camDist > 70 && this.selected !== it.plot; // the plot you chose shows in full, even from the map
       if (far && it.exhibit.group.visible) it.exhibit.sleep(); // heavy models and splats let go when nobody is near
       it.exhibit.group.visible = !far;
       if (!far) {

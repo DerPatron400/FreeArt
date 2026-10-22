@@ -646,12 +646,20 @@ export class Guide {
       if (!m.src?.startsWith('data:')) {
         const u = el('input', 'g-input g-input--small');
         Object.assign(u, { type: 'url', value: m.src || '', placeholder: tr('g.objectLinkPh') });
-        u.addEventListener('change', () => {
-          m.src = objectLink(u.value.trim());
-          m.kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(m.src) ? 'model' : 'splat';
-          if (m.src !== u.value.trim()) u.value = m.src;
-          this.changed(); redraw();
-        });
+        // A pasted link takes effect at once (a moment after typing stops), not only on leaving the field.
+        let wait;
+        const take = () => {
+          const src = objectLink(u.value.trim());
+          if (src === m.src) return;
+          const kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(src) ? 'model' : 'splat';
+          const was = m.kind;
+          Object.assign(m, { src, kind });
+          if (src !== u.value.trim()) u.value = src;
+          this.changed();
+          if (kind !== was) redraw();
+        };
+        u.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(take, 600); });
+        u.addEventListener('change', () => { clearTimeout(wait); take(); });
         c.append(u);
       }
     }

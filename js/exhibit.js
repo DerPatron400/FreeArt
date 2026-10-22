@@ -265,7 +265,11 @@ function lazyPiece(size, load) {
       },
     },
     setOpacity(a) { obj?.setOpacity?.(a); },
-    update(t, dt) { obj?.update?.(dt); },
+    update(t, dt) {
+      obj?.update?.(dt);
+      // While it loads, the outline breathes, so a visitor knows something is coming.
+      if (busy) proxy.material.opacity = 0.25 + 0.2 * Math.sin(t * 4);
+    },
     dispose() { piece.lazy.unload(); },
   };
   return piece;
@@ -634,7 +638,7 @@ export function createExhibit(world, U, mid) {
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
     update(t, dt, camera, { audible = false, presence = 0, dist = 0 } = {}) {
       for (const p of pieces) {
-        if (p.piece.lazy && dist < 45) p.piece.lazy.load();
+        if (p.piece.lazy && (dist < 45 || presence > 0.5)) p.piece.lazy.load(); // near, or the plot someone chose
         const h = p.holder;
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
