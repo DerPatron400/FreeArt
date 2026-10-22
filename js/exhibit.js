@@ -364,6 +364,16 @@ function releaseModel(src) {
   }, 120000);
 }
 
+// One light for every model, there from the first one on: a light per model changed the
+// number of lights each time one came or went, and every lit material then recompiled.
+let modelLight = null;
+function lightModels() {
+  if (modelLight || !host) return;
+  modelLight = new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2);
+  modelLight.layers.set(1);
+  host.scene.add(modelLight);
+}
+
 function modelPiece(src, size) {
   if (embedFor(src)) return { group: new THREE.Group() }; // Sketchfab pages cannot stand in the city; they play in the panel.
   return lazyPiece(size, async () => {
@@ -373,7 +383,8 @@ function modelPiece(src, size) {
     const scene = base.skinned ? (await import('three/addons/utils/SkeletonUtils.js')).clone(base.scene) : base.scene.clone(true);
     const clips = base.clips;
     const obj = new THREE.Group();
-    obj.add(scene, new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2));
+    obj.add(scene);
+    lightModels();
     fitInto(scene, base.box, size);
     // Each copy gets its own materials (to fade on its own); shapes and textures stay shared.
     const mats = [];
@@ -385,6 +396,8 @@ function modelPiece(src, size) {
     // A model that comes with its own animation plays its first one, gently looping.
     const mixer = clips?.length ? new THREE.AnimationMixer(scene) : null;
     mixer?.clipAction(clips[0]).play();
+    // Ready its shaders without holding up a frame, where the browser can compile in parallel.
+    try { onLayer(obj); const cam = host.camera.clone(); cam.layers.set(1); await host.renderer.compileAsync(obj, cam, host.scene); } catch {}
     let freed = false;
     return {
       object: obj,
