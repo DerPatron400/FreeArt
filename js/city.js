@@ -314,6 +314,7 @@ export class City {
       const exhibit = createExhibit(world, U, world.build ? buildTop(world.build) * U * 0.45 : p.h0 * 0.5);
       anchor.add(exhibit.group);
       const form = createForm(world, { lod: 0.16, size: 0.62 });
+      form.visible = !world.form.hidden;
       const place = formPlacement(world, U, p.h);
       form.scale.setScalar(place.scale);
       form.position.copy(place.pos);

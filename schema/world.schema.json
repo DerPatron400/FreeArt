@@ -81,6 +81,10 @@
           "maximum": 1,
           "description": "How restless the particles are."
         },
+        "hidden": {
+          "type": "boolean",
+          "description": "true: no particles at all; the plot shows only what is placed in it."
+        },
         "density": {
           "type": "number",
           "minimum": 0,

@@ -427,6 +427,7 @@ export class WorldView {
     u.uReveal.value = Math.min(1, u.uReveal.value + dt / 4.5);
     // The form turns slowly in the gallery; in the studio it stands square with the plot,
     // so the box, the stars and everything placed share one fixed frame.
+    this.form.visible = !this.world.form.hidden || !!this.painting; // while drawing stars you see them
     if (this.preview) this.form.rotation.y = 0;
     else if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
     this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1 });

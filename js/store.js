@@ -66,7 +66,7 @@ export function normalizeWorld(raw) {
     creator: { name: str(w.creator?.name, 50) || 'Anonymous', nature },
     statement: str(w.statement, 500),
     palette,
-    form: { type: formType, energy: num(w.form?.energy, 0.5), density: num(w.form?.density, 0.6), ...strokesOf(w.form) },
+    form: { type: formType, energy: num(w.form?.energy, 0.5), density: num(w.form?.density, 0.6), ...strokesOf(w.form), ...(w.form?.hidden === true ? { hidden: true } : {}) },
     sound: { root, mood },
     fragments,
     build: normalizeBuild(w.build),

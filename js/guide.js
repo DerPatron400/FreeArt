@@ -145,6 +145,8 @@ export class Guide {
   constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null }) {
     this.onPlace = onPlace;
     this.onNear = onNear;
+    // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
+    window.addEventListener('freeart:piecefail', (e) => { if (this.root.isConnected) toast(tr('g.pieceFail', { why: e.detail.slice(0, 120) }), 9000); });
     this.getRoom = getRoom;
     this.onDelete = onDelete;
     this.onImport = onImport;
@@ -460,7 +462,7 @@ export class Guide {
     const index = exhibitItems(this.w).indexOf(m);
     this.onPlace(index < 0 ? null : {
       index, turning,
-      onMove: (x, z) => { const s = this.placed(m); s.at = [round(x), s.at[1], round(z)]; this.changed(); },
+      onMove: (x, z) => { const s = this.placed(m); s.at = [round(x), s.at[1], round(z)]; this.placeFollow?.(); this.changed(); },
     });
   }
 
@@ -485,7 +487,30 @@ export class Guide {
       l.append(el('span', 'g-range__name', label), r);
       return l;
     };
-    const height = slider(tr('g.height'), 0, Math.max(0.2, room.h), 0.01, s.at[1], (v) => { s.at = [s.at[0], round(v), s.at[2]]; });
+    // X, Y and Z: a slider and an exact number for each, always inside the plot (in plot widths).
+    const lim = [[-room.ax, room.ax], [0, Math.max(0.2, room.h)], [-room.az, room.az]];
+    const axes = ['x', 'y', 'z'].map((k, i) => {
+      const l = el('label', 'g-range g-axis');
+      const r = el('input'), n = el('input', 'g-axis__num');
+      Object.assign(r, { type: 'range', min: lim[i][0], max: lim[i][1], step: 0.005, value: s.at[i] });
+      Object.assign(n, { type: 'number', min: lim[i][0].toFixed(2), max: lim[i][1].toFixed(2), step: 0.01, value: s.at[i].toFixed(2) });
+      r.setAttribute('aria-label', tr('g.axis.' + k));
+      n.setAttribute('aria-label', tr('g.axis.' + k));
+      const set = (v) => {
+        v = Math.min(lim[i][1], Math.max(lim[i][0], +v || 0));
+        const at = [...s.at]; at[i] = round(v); s.at = at;
+        r.value = v; if (document.activeElement !== n) n.value = v.toFixed(2);
+        this.changed();
+      };
+      r.addEventListener('input', () => set(r.value));
+      n.addEventListener('change', () => set(n.value));
+      l.append(el('span', 'g-range__name', k.toUpperCase() + ' · ' + tr('g.axis.' + k)), r, n);
+      return { l, r, n };
+    });
+    // Dragging in the picture moves X and Z; the controls follow.
+    this.placeFollow = () => axes.forEach(({ r, n }, i) => { r.value = s.at[i]; n.value = (+s.at[i]).toFixed(2); });
+    const centre = button(tr('g.centreIt'), 'g-pill g-centre');
+    centre.addEventListener('click', () => { s.at = [0, s.at[1], 0]; this.placeFollow(); this.changed(); });
     const size = slider(tr('g.size'), 0.05, 1.5, 0.01, s.size, (v) => { s.size = round(v); });
     const turn = slider(tr('g.turnIt'), -180, 180, 1, typeof s.turn === 'number' ? Math.round(s.turn * 180 / Math.PI) : 0, (v) => { s.turn = round(v * Math.PI / 180); face.querySelector('input').checked = false; });
     const face = el('label', 'g-check');
@@ -515,7 +540,7 @@ export class Guide {
     done.addEventListener('click', () => this.stopPlace());
     const row = el('div', 'g-choice');
     row.append(view, done);
-    p.append(el('p', 'g-help', tr('g.placeHelp')), height, size, turn, face,
+    p.append(el('p', 'g-help', tr('g.placeHelp')), ...axes.map((a) => a.l), centre, size, turn, face,
       el('p', 'g-help', tr('g.motion')), motion, el('p', 'g-help', tr('g.whenNear')), near, el('p', 'g-help', tr('g.preview')), preview);
     if (m.kind === 'splat') {
       const flip = el('label', 'g-check');
@@ -756,9 +781,14 @@ export class Guide {
     for (const f of FORMS) {
       const b = button(tr('form.' + f.id), 'g-pill' + (this.w.form.type === f.id ? ' is-on' : ''));
       b.dataset.id = f.id;
-      b.addEventListener('click', () => { this.w.form.type = f.id; this.changed(); });
+      b.addEventListener('click', () => { this.w.form.type = f.id; delete this.w.form.hidden; this.changed(); });
       shapes.append(b);
     }
+    // Or no particles at all: the space holds only what you place in it.
+    const none = button(tr('form.none'), 'g-pill' + (this.w.form.hidden ? ' is-on' : ''));
+    none.dataset.id = 'none';
+    none.addEventListener('click', () => { this.w.form.hidden = true; this.changed(); });
+    shapes.append(none);
     const slider = (label, a, z, key) => {
       const l = el('label', 'g-range');
       const r = el('input');
@@ -772,7 +802,7 @@ export class Guide {
     const [density, dr] = slider(tr('g.starCount'), tr('g.few'), tr('g.many'), 'density');
     this.syncs.get(panel).push(() => {
       colours.querySelectorAll('input').forEach((x, i) => { if (x !== document.activeElement) x.value = this.w.palette[i]; });
-      shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x.dataset.id === this.w.form.type));
+      shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x.dataset.id === (this.w.form.hidden ? 'none' : this.w.form.type)));
       er.value = this.w.form.energy; dr.value = this.w.form.density;
     });
     return { colours, shapes, energy, density };

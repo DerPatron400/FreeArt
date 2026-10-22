@@ -465,3 +465,6 @@ body.is-painting { user-select: none; -webkit-user-select: none; }
 .keybox .g-btn { text-decoration: none; text-align: center; }
 .keybox .g-btn--main { align-self: flex-end; }
 body.is-busy, body.is-busy * { cursor: progress !important; }
+.g-place .g-range__name { min-width: 7.5em; }
+.g-centre { align-self: flex-start; }
+.g-range .g-axis__num { flex: 0 0 auto; width: 4.6em; padding: 0.25em 0.35em; font: inherit; font-size: 0.9em; color: inherit; background: transparent; border: 1px solid rgba(236, 228, 212, 0.25); border-radius: 6px; text-align: right; }

@@ -253,7 +253,12 @@ function lazyPiece(size, load) {
           obj = o;
           group.add(onLayer(o.object));
           proxy.visible = false;
-        }).catch(() => { busy = false; });
+        }).catch((e) => {
+          busy = false;
+          // Say so instead of staying silent: the studio shows a note, the console the reason.
+          console.warn('Free Art: a 3D piece could not load', e);
+          window.dispatchEvent(new CustomEvent('freeart:piecefail', { detail: String(e?.message || e) }));
+        });
       },
       unload() {
         want = false;
