@@ -50,7 +50,7 @@ export class WorldView {
     this.painting = on ? opts : null;
     const c = this.engine.controls;
     c.enabled = !on;
-    c.autoRotate = !on;
+    c.autoRotate = !on && !this.preview;
     // Pictures and the rest step aside while you draw, so the stars are clear.
     if (this.exhibit) this.exhibit.group.visible = !on;
     document.body.classList.toggle('is-painting', !!on);
@@ -64,7 +64,7 @@ export class WorldView {
     this.placing = opts || null;
     const c = this.engine.controls;
     c.enabled = !opts || !!opts.turning;
-    c.autoRotate = !opts;
+    c.autoRotate = !opts && !this.preview;
     document.body.classList.toggle('is-placing', !!opts);
     if (!opts) this.clearMarker();
   }
@@ -193,7 +193,7 @@ export class WorldView {
     this.group.visible = true;
     const e = this.engine;
     e.setMode('orbit');
-    Object.assign(e.controls, { minDistance: 3.2, maxDistance: Math.max(24, this.roomDist * 1.6), autoRotate: true, autoRotateSpeed: preview ? 0.5 : 0.25 });
+    Object.assign(e.controls, { minDistance: 3.2, maxDistance: Math.max(24, this.roomDist * 1.6), autoRotate: !preview, autoRotateSpeed: 0.25 }); // in the studio the plot stands still: you turn it by hand
     this.frame();
     const narrow = window.innerWidth <= 760;
     if (!preview || !this.shownOnce) {
@@ -312,7 +312,10 @@ export class WorldView {
   // the height of its storeys, to the same scale as in the city, so stars and
   // pictures placed by hand land where you mean them to.
   outline() {
-    if (this.plotBox) { this.plotBox.removeFromParent(); this.plotBox.geometry.dispose(); this.plotBox.material.dispose(); this.plotBox = null; }
+    if (this.plotBox) {
+      this.plotBox.traverse((o) => { o.geometry.dispose(); o.material.dispose(); });
+      this.plotBox.removeFromParent(); this.plotBox = null;
+    }
     const p = this.plot, w = this.world;
     if (!p || !this.form) return;
     const Ucity = Math.min(p.w, p.d);
@@ -343,6 +346,17 @@ export class WorldView {
     g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
     this.plotBox = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: 0xece4d4, transparent: true, opacity: 0.22, depthWrite: false }));
     this.plotBox.layers.set(1);
+    // A faint floor grid (quarters of the plot) to place things by.
+    const grid = [], n = 4;
+    for (let i = 1; i < n; i++) {
+      const x = -a + (2 * a * i) / n, z = -b + (2 * b * i) / n;
+      grid.push(x, y0, -b, x, y0, b, -a, y0, z, a, y0, z);
+    }
+    const gg = new THREE.BufferGeometry();
+    gg.setAttribute('position', new THREE.Float32BufferAttribute(grid, 3));
+    const floor = new THREE.LineSegments(gg, new THREE.LineBasicMaterial({ color: 0xece4d4, transparent: true, opacity: 0.08, depthWrite: false }));
+    floor.layers.set(1);
+    this.plotBox.add(floor);
     parent.add(this.plotBox);
     // Step back far enough to see the whole room.
     this.group.updateMatrixWorld(true);
@@ -403,7 +417,7 @@ export class WorldView {
   closeFragment() {
     this.openIndex = -1;
     this.fragments.forEach((x) => x.label.classList.remove('is-open'));
-    if (this.group.visible) this.engine.controls.autoRotate = true;
+    if (this.group.visible) this.engine.controls.autoRotate = !this.preview;
   }
 
   update(t, dt) {
@@ -411,7 +425,10 @@ export class WorldView {
     const u = this.form.userData.uniforms;
     u.uTime.value = t;
     u.uReveal.value = Math.min(1, u.uReveal.value + dt / 4.5);
-    if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
+    // The form turns slowly in the gallery; in the studio it stands square with the plot,
+    // so the box, the stars and everything placed share one fixed frame.
+    if (this.preview) this.form.rotation.y = 0;
+    else if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
     this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1 });
     this.updateMarker();
     const e = this.engine;
