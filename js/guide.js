@@ -559,58 +559,104 @@ export class Guide {
     const bar = el('div', 'g-arrange');
     bar.append(el('p', 'g-help', tr('g.arrange')));
     const row = el('div', 'g-choice');
-    for (const id of ['centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']) {
+    for (const id of ['surprise', 'spiral', 'bloom', 'wave', 'arch', 'knot', 'centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']) {
       const b = button(tr('arrange.' + id), 'g-pill');
       b.addEventListener('click', () => this.arrange(id));
       row.append(b);
     }
-    bar.append(row);
+    bar.append(row, el('p', 'g-help g-help--quiet', tr('g.arrangeHint')));
     return bar;
   }
 
+  // Every press is a new variation: the same idea (a ring, a spiral, a wave...), with its
+  // own turn, rhythm and lift, so arranging is a little like composing.
   arrange(id) {
     const room = this.getRoom() || { ax: 0.5, az: 0.5, h: 1, front: 1 };
     const list = this.things().filter((m) => m.show && SHOWABLE.includes(m.kind));
     const n = list.length;
     if (!n) return;
-    const mid = Math.min(room.h * 0.45, 0.6), r = Math.min(room.ax, room.az) * 0.62;
+    const rnd = Math.random, wob = (k) => (rnd() * 2 - 1) * k;
+    if (id === 'surprise') id = ['spiral', 'wave', 'arch', 'knot', 'bloom', 'ring', 'orbit'][Math.floor(rnd() * 7)];
+    const H = Math.max(0.2, room.h), mid = Math.min(H * 0.45, 0.6), r = Math.min(room.ax, room.az) * (0.55 + rnd() * 0.12);
+    const phase = rnd() * Math.PI * 2, dir = rnd() < 0.5 ? -1 : 1, lift = 0.6 + rnd() * 0.5;
+    const along = (t) => (n === 1 ? 0.5 : t); // a lone piece sits in the middle of the curve
+    // Sizes that leave room between neighbours along a curve of the given length.
+    const fit = (len, size, cap) => round(Math.max(0.06, Math.min(size, (len / n) * 0.8, cap)));
+    // Facing along a curve: the direction from this point to a little further on.
+    const tangent = (f, t) => { const a = f(t), b = f(t + 0.01); return Math.atan2(b[0] - a[0], b[2] - a[2]) + Math.PI / 2; };
     list.forEach((m, i) => {
       const s = this.placed(m);
       const size = Math.min(s.size, 1.2 * Math.min(room.ax, room.az) / Math.max(1, Math.sqrt(n)));
+      const t = along((i + 0.5) / n);
       let at = [0, mid, 0], turn, motion = s.motion === 'orbit' ? 'float' : s.motion || 'float';
       if (id === 'centre') {
         if (i === 0) { at = [0, mid, 0]; s.size = round(Math.min(0.55, room.ax)); }
-        else { const a = ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2; at = [Math.cos(a) * r, mid * 0.8, Math.sin(a) * r]; s.size = round(Math.min(size, 0.22)); }
+        else { const a = phase + ((i - 1) / Math.max(1, n - 1)) * Math.PI * 2; at = [Math.cos(a) * r, mid * (0.7 + wob(0.15)), Math.sin(a) * r]; s.size = round(Math.min(size, 0.22) * (0.85 + rnd() * 0.3)); }
       } else if (id === 'ring') {
-        const a = (i / n) * Math.PI * 2 + Math.PI / 2;
-        at = [Math.cos(a) * r, mid, Math.sin(a) * r];
+        const a = phase + (i / n) * Math.PI * 2;
+        at = [Math.cos(a) * r, mid + Math.sin(a * 2 + phase) * H * 0.08, Math.sin(a) * r];
         turn = Math.atan2(at[0], at[2]); // facing outwards, to the street on every side
         s.size = round(Math.min(size, 0.3));
       } else if (id === 'row' || id === 'street') {
         const x = n === 1 ? 0 : (-1 + (2 * i) / (n - 1)) * room.ax * 0.72;
         const z = id === 'street' ? room.front * (room.az - Math.min(size, 0.3) / 2 - 0.04) : 0;
-        at = [x, mid, z];
+        at = [x, mid + Math.sin(phase + i * 1.1) * H * 0.06, z]; // a gentle melody in the heights
         turn = room.front > 0 ? 0 : Math.PI;
         s.size = round(Math.min(size, (room.ax * 1.5) / n, 0.35));
       } else if (id === 'stack') {
-        const each = Math.min(0.3, (room.h * 0.9) / n);
+        const each = Math.min(0.3, (H * 0.9) / n);
         s.size = round(Math.min(s.size, each * 0.9));
-        at = [0, each * (i + 0.5), 0];
+        const a = phase + i * 0.9 * dir;
+        at = [Math.cos(a) * each * 0.25, each * (i + 0.5), Math.sin(a) * each * 0.25]; // a slight twist as it rises
       } else if (id === 'orbit') {
-        const a = (i / n) * Math.PI * 2;
-        at = [Math.cos(a) * r, mid + (i % 2 ? 0.08 : -0.04), Math.sin(a) * r];
+        const a = phase + (i / n) * Math.PI * 2;
+        at = [Math.cos(a) * r, mid + Math.sin(a * 3) * H * 0.06, Math.sin(a) * r];
         motion = 'orbit';
         s.size = round(Math.min(size, 0.28));
       } else if (id === 'floor') {
         const cols = Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols);
         const cx = i % cols, cz = Math.floor(i / cols);
         s.size = round(Math.min(size, (room.ax * 1.6) / cols, 0.4));
-        at = [(cols === 1 ? 0 : (-1 + (2 * cx) / (cols - 1)) * room.ax * 0.65), s.size / 2, (rows === 1 ? 0 : (-1 + (2 * cz) / (rows - 1)) * room.az * 0.65)];
+        const jx = cols === 1 ? 0 : wob(0.12) * room.ax / cols, jz = rows === 1 ? 0 : wob(0.12) * room.az / rows;
+        at = [(cols === 1 ? 0 : (-1 + (2 * cx) / (cols - 1)) * room.ax * 0.65) + jx, s.size / 2, (rows === 1 ? 0 : (-1 + (2 * cz) / (rows - 1)) * room.az * 0.65) + jz];
+        turn = phase + wob(0.4);
         motion = 'still';
+      } else if (id === 'spiral') {
+        // A helix that widens as it climbs, turning by the golden angle's rhythm.
+        const turns = 1 + rnd() * 1.2;
+        const f = (u) => { const a = phase + dir * u * turns * Math.PI * 2, rr = r * (0.35 + 0.65 * u); return [Math.cos(a) * rr * room.ax / Math.min(room.ax, room.az), H * (0.1 + 0.75 * u * lift), Math.sin(a) * rr * room.az / Math.min(room.ax, room.az)]; };
+        at = f(t); turn = tangent(f, t);
+        s.size = fit(turns * Math.PI * 2 * r * 0.7, size, 0.3);
+      } else if (id === 'bloom') {
+        // Sunflower seeds: the golden angle spreads them evenly over a disc, lifted like a dome.
+        const a = phase + i * 2.39996, rr = Math.sqrt((i + 0.5) / n) * r * 1.05;
+        at = [Math.cos(a) * rr * room.ax / Math.min(room.ax, room.az), mid * (1.25 - 0.6 * (rr / r) ** 2) + wob(0.03), Math.sin(a) * rr * room.az / Math.min(room.ax, room.az)];
+        turn = Math.atan2(at[0], at[2]);
+        s.size = round(Math.max(0.06, Math.min(size, r * 1.6 / Math.sqrt(n), 0.3)));
+      } else if (id === 'wave') {
+        // A ribbon across the plot, rising and falling like a swell.
+        const k = 1 + Math.floor(rnd() * 2), amp = room.az * (0.25 + rnd() * 0.3), angle = phase;
+        const f = (u) => { const x = (u * 2 - 1) * room.ax * 0.8, z = Math.sin(u * Math.PI * k + angle) * amp; return [x, mid + Math.sin(u * Math.PI * 2 * k + angle) * H * 0.18 * lift, z]; };
+        at = f(t); turn = tangent(f, t);
+        s.size = fit(room.ax * 1.8, size, 0.3);
+      } else if (id === 'arch') {
+        // A crescent: rising from the ground, over the top, and down again.
+        const span = Math.PI * (0.55 + rnd() * 0.35), rr = r * 1.1;
+        const f = (u) => { const a = phase + (u - 0.5) * span * 2; return [Math.cos(a) * rr * 0.9, H * (0.08 + 0.8 * lift * Math.sin(u * Math.PI)), Math.sin(a) * rr * 0.9]; };
+        at = f(t); turn = Math.atan2(at[0], at[2]) + Math.PI; // facing the middle
+        s.size = fit(span * 2 * rr, size, 0.3);
+      } else if (id === 'knot') {
+        // A Lissajous loop through the room, three-dimensional and never quite the same.
+        const p = 1 + Math.floor(rnd() * 2), q = p + 1, z0 = rnd() * Math.PI;
+        const f = (u) => { const a = u * Math.PI * 2; return [Math.sin(p * a + phase) * room.ax * 0.7, mid + Math.sin(q * a + z0) * H * 0.25, Math.sin(q * a) * room.az * 0.7]; };
+        at = f((i + rnd() * 0.3) / n); turn = tangent(f, (i + 0.15) / n);
+        s.size = fit(Math.PI * 2 * r * 1.5, size, 0.28);
       }
+      // Everything stays inside the plot, whatever the form.
+      at = [Math.max(-room.ax, Math.min(room.ax, at[0])), Math.max(s.size * 0.3, Math.min(H, at[1])), Math.max(-room.az, Math.min(room.az, at[2]))];
       s.at = at.map(round);
       s.motion = motion;
-      if (turn === undefined) delete s.turn; else s.turn = round(turn);
+      if (turn === undefined) delete s.turn; else s.turn = round(Math.atan2(Math.sin(turn), Math.cos(turn)));
     });
     this.changed();
     this.drawThings();
