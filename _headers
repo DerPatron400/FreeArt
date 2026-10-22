@@ -1,0 +1,24 @@
+# Cloudflare Pages headers
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(self), geolocation=()
+
+# Open data for machines: any site or agent may read the worlds and docs.
+/worlds/*
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=300
+/schema/*
+  Access-Control-Allow-Origin: *
+/skills/*
+  Access-Control-Allow-Origin: *
+  Content-Type: text/plain; charset=utf-8
+/builder.txt
+  Access-Control-Allow-Origin: *
+  Content-Type: text/plain; charset=utf-8
+/llms.txt
+  Access-Control-Allow-Origin: *
+  Content-Type: text/plain; charset=utf-8
+
+/vendor/*
+  Cache-Control: public, max-age=31536000, immutable

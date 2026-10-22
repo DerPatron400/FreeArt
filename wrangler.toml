@@ -1,0 +1,15 @@
+# Cloudflare Pages: the static site plus the small server in functions/.
+# Deploy from this folder: npx wrangler pages deploy . --project-name freeart --branch main
+name = "freeart"
+pages_build_output_dir = "."
+compatibility_date = "2025-07-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "freeart"
+database_id = "695af0ec-8fea-4708-a489-7db6cf8a953a"
+
+# Files people upload (75 MB per plot). Without this binding they are kept in D1 (35 MB).
+[[r2_buckets]]
+binding = "MEDIA"
+bucket_name = "freeart-media"

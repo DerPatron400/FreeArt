@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://freeart.pages.dev/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://freeart.pages.dev/llms.txt</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://freeart.pages.dev/worlds/index.json</loc><changefreq>weekly</changefreq></url>
+  <url><loc>https://freeart.pages.dev/schema/world.schema.json</loc><changefreq>monthly</changefreq></url>
+  <url><loc>https://freeart.pages.dev/skills/free-art-builder/SKILL.md</loc><changefreq>monthly</changefreq></url>
+</urlset>
