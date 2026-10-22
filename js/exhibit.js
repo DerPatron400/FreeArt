@@ -83,22 +83,21 @@ function fit(t) {
   return new THREE.CanvasTexture(c);
 }
 
+// Pictures load only when someone comes near (like models), so a city full of
+// worlds does not fetch and decode every picture at once.
 function imagePiece(src, size, ink) {
-  const group = new THREE.Group();
-  const holder = frameLines(size, size * 0.75, ink[1], 0.4);
-  group.add(holder);
-  const b = bag;
-  new THREE.TextureLoader().load(src, (t) => {
-    if (b.gone) { t.dispose(); return; }
-    t = fit(t);
-    t.colorSpace = THREE.SRGBColorSpace;
-    b.textures.add(t);
-    const k = t.image.height / t.image.width;
-    const w = k > 1 ? size / k : size, h = w * k;
-    group.remove(holder); holder.geometry.dispose(); holder.material.dispose();
-    group.add(onLayer(plane(t, w, h, 0.92)), onLayer(frameLines(w * 1.04, h * 1.04, ink[1], 0.35)));
-  });
-  return { group };
+  const proxy = frameLines(size, size * 0.75, ink[1], 0.4);
+  return lazyPiece(size, () => new Promise((resolve, reject) => {
+    new THREE.TextureLoader().load(src, (t) => {
+      t = fit(t);
+      t.colorSpace = THREE.SRGBColorSpace;
+      const k = t.image.height / t.image.width;
+      const w = k > 1 ? size / k : size, h = w * k;
+      const g = new THREE.Group();
+      g.add(plane(t, w, h, 0.92), frameLines(w * 1.04, h * 1.04, ink[1], 0.35));
+      resolve({ object: g, free() { freeObject(g); t.dispose(); } });
+    }, undefined, reject);
+  }), { proxy, solid: false, what: 'picture' });
 }
 
 function sketchPiece(sketch, size, ink) {
@@ -199,54 +198,72 @@ function audioPiece(size, ink) {
   };
 }
 
+// Films too: the video (and its decoder) exists only while someone is near.
 function videoPiece(src, size, ink) {
   const embed = embedFor(src);
-  const group = new THREE.Group();
   const h = size * 9 / 16;
-  if (!embed && (/\.(mp4|webm|mov)(\?|$)/i.test(src) || src.startsWith('data:video/'))) {
-    const v = Object.assign(document.createElement('video'), { src, muted: true, loop: true, playsInline: true, crossOrigin: 'anonymous', autoplay: true });
-    v.play().catch(() => {});
-    bag.media.add(v);
-    const t = keep(new THREE.VideoTexture(v));
-    t.colorSpace = THREE.SRGBColorSpace;
-    group.add(plane(t, size, h, 0.92));
-    group.userData.video = v;
-  } else {
-    const id = embed?.url.match(/youtube-nocookie\.com\/embed\/([\w-]+)/)?.[1];
-    if (id) {
-      const b = bag;
-      new THREE.TextureLoader().load(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, (t) => {
-        if (b.gone) { t.dispose(); return; }
-        t.colorSpace = THREE.SRGBColorSpace; b.textures.add(t); group.add(onLayer(plane(t, size, h, 0.85)));
+  const proxy = frameLines(size * 1.04, h * 1.04, ink[1], 0.35);
+  const file = !embed && (/\.(mp4|webm|mov)(\?|$)/i.test(src) || src.startsWith('data:video/'));
+  const id = embed?.url.match(/youtube-nocookie\.com\/embed\/([\w-]+)/)?.[1];
+  const piece = lazyPiece(size, () => new Promise((resolve, reject) => {
+    const g = new THREE.Group();
+    g.add(frameLines(size * 1.04, h * 1.04, ink[1], 0.35));
+    if (file) {
+      // Until someone stands close it shows its first frame and fetches little more; then it plays.
+      const v = Object.assign(document.createElement('video'), { src: src.startsWith('data:') ? src : src + '#t=0.1', muted: true, loop: true, playsInline: true, crossOrigin: 'anonymous', preload: 'metadata' });
+      const t = new THREE.VideoTexture(v);
+      t.colorSpace = THREE.SRGBColorSpace;
+      g.add(plane(t, size, h, 0.92));
+      return resolve({
+        object: g,
+        update(dt, { presence = 1 } = {}) {
+          if (presence > 0.5 && v.paused && !v.ended) v.play().catch(() => {});
+          else if (presence < 0.3 && !v.paused) v.pause();
+        },
+        // A paused video still holds its decoder and buffers; letting go of the source frees them.
+        free() { v.pause(); v.removeAttribute('src'); v.load(); freeObject(g); t.dispose(); },
       });
     }
-    // A play mark, drawn in lines.
+    // A play mark, drawn in lines, over the film's still where there is one.
     const s = size * 0.08;
-    const tri = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(-s * 0.6, -s, 0.01), new THREE.Vector3(s, 0, 0.01), new THREE.Vector3(-s * 0.6, s, 0.01), new THREE.Vector3(-s * 0.6, -s, 0.01),
-    ]), new THREE.LineBasicMaterial({ color: ink[2], transparent: true, opacity: 0.9, depthWrite: false }));
-    group.add(tri);
-  }
-  group.add(frameLines(size * 1.04, h * 1.04, ink[1], 0.35));
-  return { group };
+    ]), new THREE.LineBasicMaterial({ color: ink[2], transparent: true, opacity: 0.9, depthWrite: false })));
+    const done = () => resolve({ object: g, free() { freeObject(g); } });
+    if (!id) return done();
+    new THREE.TextureLoader().load(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, (t) => {
+      t.colorSpace = THREE.SRGBColorSpace; g.add(plane(t, size, h, 0.85)); done();
+    }, undefined, done);
+  }), { proxy, solid: false, what: 'film' });
+  return piece;
 }
 
-// Heavy pieces (3D models, splats) load only while someone is near the plot and are
-// freed again when they leave; from afar a faint frame keeps their place.
-function lazyPiece(size, load) {
+// Heavy pieces (pictures, films, 3D models, splats) load only while someone is near the
+// plot and are freed again when they leave; from afar a faint frame keeps their place.
+// Heavy pieces take turns: one loads and is set up at a time, with a breath between,
+// so arriving at a plot never stacks several parses into one long frame.
+let turn = Promise.resolve();
+const breathe = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 300 }) : setTimeout(r, 60)));
+function inTurn(load) {
+  const go = turn.then(breathe).then(load);
+  turn = go.catch(() => {});
+  return go;
+}
+
+function lazyPiece(size, load, { proxy = boxLines(size), solid = true, what = '3D piece', heavy = solid } = {}) {
   const group = new THREE.Group();
-  const proxy = boxLines(size);
   group.add(proxy);
   const b = bag;
   let obj = null, want = false, busy = false;
   const piece = {
-    group, solid: true,
+    group, solid,
     lazy: {
+      heavy, // models and splats: only for the plot someone is actually at
       load() {
         want = true;
         if (obj || busy) return;
         busy = true;
-        load().then((o) => {
+        (heavy ? inTurn(load) : load()).then((o) => {
           busy = false;
           if (!o) return;
           if (b.gone || !want) return o.free();
@@ -256,8 +273,8 @@ function lazyPiece(size, load) {
         }).catch((e) => {
           busy = false;
           // Say so instead of staying silent: the studio shows a note, the console the reason.
-          console.warn('Free Art: a 3D piece could not load', e);
-          window.dispatchEvent(new CustomEvent('freeart:piecefail', { detail: String(e?.message || e) }));
+          console.warn(`Free Art: a ${what} could not load`, e);
+          if (solid) window.dispatchEvent(new CustomEvent('freeart:piecefail', { detail: String(e?.message || e) }));
         });
       },
       unload() {
@@ -270,8 +287,8 @@ function lazyPiece(size, load) {
       },
     },
     setOpacity(a) { obj?.setOpacity?.(a); },
-    update(t, dt) {
-      obj?.update?.(dt);
+    update(t, dt, info) {
+      obj?.update?.(dt, info);
       // While it loads, the outline breathes, so a visitor knows something is coming.
       if (busy) proxy.material.opacity = 0.25 + 0.2 * Math.sin(t * 4);
     },
@@ -302,31 +319,79 @@ async function bytesOf(src) {
   return new Uint8Array(await (await fetch(src)).arrayBuffer());
 }
 
+// Parsed models are kept for a while and shared: the city and the world view (or a
+// second visit) then neither download nor parse the same file again.
+const models = new Map(); // src -> { ready, users, timer }
+async function parseModel(src) {
+  if (/\.fbx(\?|#|$)/i.test(src)) {
+    const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
+    const scene = await new FBXLoader().loadAsync(src);
+    return { scene, clips: scene.animations };
+  }
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const loader = new GLTFLoader();
+  const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  const gltf = await loader.loadAsync(src);
+  return { scene: gltf.scene, clips: gltf.animations };
+}
+// The model's true extent, measured once on the loaded original: skinned meshes need
+// their bones posed first, or a fresh copy measures as a point and is blown up to fill the sky.
+function measure(scene) {
+  scene.updateMatrixWorld(true);
+  let skinned = false;
+  scene.traverse((o) => { if (o.isSkinnedMesh) { skinned = true; o.skeleton.update(); o.computeBoundingBox(); } });
+  return { box: new THREE.Box3().setFromObject(scene), skinned };
+}
+function useModel(src) {
+  let m = models.get(src);
+  if (!m) {
+    m = { ready: parseModel(src).then((r) => ({ ...r, ...measure(r.scene) })), users: 0, timer: 0 };
+    models.set(src, m);
+    m.ready.catch(() => models.delete(src));
+  }
+  clearTimeout(m.timer);
+  m.users++;
+  return m.ready;
+}
+function releaseModel(src) {
+  const m = models.get(src);
+  if (!m || --m.users > 0) return;
+  m.timer = setTimeout(() => {
+    if (m.users > 0) return;
+    models.delete(src);
+    m.ready.then(({ scene }) => freeObject(scene), () => {});
+  }, 120000);
+}
+
 function modelPiece(src, size) {
   if (embedFor(src)) return { group: new THREE.Group() }; // Sketchfab pages cannot stand in the city; they play in the panel.
   return lazyPiece(size, async () => {
-    let scene, clips;
-    if (/\.fbx(\?|#|$)/i.test(src)) {
-      const { FBXLoader } = await import('three/addons/loaders/FBXLoader.js');
-      scene = await new FBXLoader().loadAsync(src);
-      clips = scene.animations;
-    } else {
-      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-      const loader = new GLTFLoader();
-      const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
-      loader.setMeshoptDecoder(MeshoptDecoder);
-      const gltf = await loader.loadAsync(src);
-      scene = gltf.scene; clips = gltf.animations;
-    }
+    let base;
+    try { base = await useModel(src); } catch (e) { releaseModel(src); throw e; }
+    // Skinned models need their skeleton copied too; plain ones are cheaper to copy.
+    const scene = base.skinned ? (await import('three/addons/utils/SkeletonUtils.js')).clone(base.scene) : base.scene.clone(true);
+    const clips = base.clips;
     const obj = new THREE.Group();
     obj.add(scene, new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2));
-    fitInto(scene, new THREE.Box3().setFromObject(scene), size);
+    fitInto(scene, base.box, size);
+    // Each copy gets its own materials (to fade on its own); shapes and textures stay shared.
     const mats = [];
-    scene.traverse((o) => { for (const m of [].concat(o.material || [])) { m.transparent = true; mats.push(m); } });
+    scene.traverse((o) => {
+      if (!o.material) return;
+      o.material = Array.isArray(o.material) ? o.material.map((m) => m.clone()) : o.material.clone();
+      for (const m of [].concat(o.material)) { m.transparent = true; mats.push(m); }
+    });
     // A model that comes with its own animation plays its first one, gently looping.
     const mixer = clips?.length ? new THREE.AnimationMixer(scene) : null;
     mixer?.clipAction(clips[0]).play();
-    return { object: obj, free: () => freeObject(obj), setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }), update: (dt) => mixer?.update(dt) };
+    let freed = false;
+    return {
+      object: obj,
+      free: () => { if (freed) return; freed = true; mats.forEach((m) => m.dispose()); releaseModel(src); },
+      setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }),
+      update: (dt) => mixer?.update(dt),
+    };
   });
 }
 
@@ -653,7 +718,8 @@ export function createExhibit(world, U, mid) {
       const layers = raycaster.layers.mask;
       raycaster.layers.enableAll();
       let hits = [];
-      try { hits = raycaster.intersectObjects(shown.filter((p) => !p.piece.lazy).map((p) => p.holder), true); } catch {}
+      // Big meshes and splats are judged by their cube below; everything else by its surfaces.
+      try { hits = raycaster.intersectObjects(shown.filter((p) => !['model', 'splat'].includes(current[p.index].kind)).map((p) => p.holder), true); } catch {}
       raycaster.layers.mask = layers;
       // Words and constellations are airy: a picture or film seen through them still wins.
       const airy = (p) => ['poem', 'constellation', 'melody'].includes(current[p.index].kind);
@@ -683,9 +749,11 @@ export function createExhibit(world, U, mid) {
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, dist = 0 } = {}) {
+    update(t, dt, camera, { audible = false, presence = 0, dist = 0, wake = true } = {}) {
       for (const p of pieces) {
-        if (p.piece.lazy && (dist < 45 || presence > 0.5)) p.piece.lazy.load(); // near, or the plot someone chose
+        // Near, or the plot someone chose; models and splats only for the plot someone is at.
+        // Nothing loads before the visitor has come in (wake).
+        if (p.piece.lazy && wake && (p.piece.lazy.heavy ? dist < 18 || presence > 0.2 : dist < 45 || presence > 0.5)) p.piece.lazy.load();
         const h = p.holder;
         if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);

@@ -449,7 +449,8 @@ export class City {
     e.scene.fog = null;
     e.setMode('orbit');
     document.body.style.cursor = '';
-    for (const it of this.items) it.label.hidden = true;
+    // Out of the city: its pictures, films and models let go until you come back.
+    for (const it of this.items) { it.label.hidden = true; it.exhibit.sleep(); }
   }
 
   select(p, { quiet = false, fly = true } = {}) {
@@ -559,7 +560,7 @@ export class City {
           const d = Math.hypot(this.walker.pos.x - it.anchor.position.x, this.walker.pos.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
         }
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, dist: camDist });
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, dist: camDist, wake: this.active });
       }
 
       if (it.label.hidden) continue;

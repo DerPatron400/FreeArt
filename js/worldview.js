@@ -261,6 +261,10 @@ export class WorldView {
       e.setViewOffset(done ? gx : x + (gx - x) * k, done ? gy : y + (gy - y) * k);
       if (done) this.offsetGoal = null;
     }
+    // Look again only when the pointer or the camera moved.
+    const at = e.pointer.x + ',' + e.pointer.y + ',' + e.camera.position.x.toFixed(2) + e.camera.position.z.toFixed(2);
+    if (at === this.overAt) return;
+    this.overAt = at;
     const over = this.canFocus() && !e.flight && !!this.pickPiece();
     if (over !== this.overPiece) { this.overPiece = over; document.body.style.cursor = over ? 'pointer' : ''; }
   }
