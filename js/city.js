@@ -5,7 +5,7 @@ import { createForm, disposeForm } from './form.js';
 import { roman, el, lerp, clamp, rng } from './util.js';
 import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
-import { createOcean } from './ocean.js';
+import { createOcean, createOceanWalls } from './ocean.js';
 import { createExhibit, exhibitTop } from './exhibit.js';
 import { t } from './i18n.js';
 
@@ -182,6 +182,11 @@ export class City {
 
     this.buildStreets();
     this.ocean = createOcean(this.engine.renderer, { height: 18 });
+    // ...and on every side: the city lies in the ocean, its walls just beyond where you can fly.
+    this.oceanWalls = createOceanWalls(this.ocean, { reach: EXTENT + 14, height: 18 });
+    this.ocean.add(this.oceanWalls);
+    this.oceanWalls.rotation.x = -Math.PI / 2; // undo the sky's turn, so the walls stand upright
+    this.oceanWalls.position.set(0, 0, 18); // and reach down to the ground (in the sky's turned frame)
     this.group.add(this.ocean);
 
     // Invisible volumes for picking.
