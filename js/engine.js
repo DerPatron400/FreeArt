@@ -5,6 +5,26 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { Pass } from 'three/addons/postprocessing/Pass.js';
+
+// Draws layer 1 (blobs, built lines, exhibits) after the bloom, into the same
+// buffer and against the same depth, so it is crisp, never glows, and still
+// hides behind what stands in front of it.
+class LayerPass extends Pass {
+  constructor(scene, camera) {
+    super();
+    this.scene = scene; this.camera = camera; this.needsSwap = false;
+  }
+  render(renderer, writeBuffer, readBuffer) {
+    const auto = renderer.autoClear;
+    renderer.autoClear = false;
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    this.camera.layers.set(1);
+    renderer.render(this.scene, this.camera);
+    this.camera.layers.set(0);
+    renderer.autoClear = auto;
+  }
+}
 import { easeInOutCubic } from './util.js';
 
 export class Engine {
@@ -27,6 +47,7 @@ export class Engine {
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.7, 0.12);
     this.composer.addPass(this.bloom);
+    this.composer.addPass(new LayerPass(this.scene, this.camera));
     this.composer.addPass(new OutputPass());
 
     this.pointer = new THREE.Vector2(-10, -10);
@@ -34,6 +55,7 @@ export class Engine {
     this.updaters = new Set();
     this.viewOffset = [0, 0];
     this.flight = null;
+    this.manual = false; // true while something else (the walker) drives the camera
     this.clock = new THREE.Clock();
 
     canvas.addEventListener('pointermove', (e) => {
@@ -70,6 +92,22 @@ export class Engine {
     if (x || y) this.camera.setViewOffset(w, h, -x, y, w, h);
     else this.camera.clearViewOffset();
     this.camera.updateProjectionMatrix();
+  }
+
+  // 'map' walks the city (drag pans along the ground), 'orbit' turns around a world.
+  setMode(mode) {
+    const c = this.controls;
+    const { MOUSE, TOUCH } = THREE;
+    if (mode === 'map') {
+      // Negative pan speed: dragging moves you the way you drag, like steering, not like grabbing paper.
+      Object.assign(c, { enablePan: true, screenSpacePanning: false, panSpeed: -1.2 });
+      c.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
+      c.touches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE };
+    } else {
+      Object.assign(c, { enablePan: false, maxPolarAngle: Math.PI, panSpeed: 1 });
+      c.mouseButtons = { LEFT: MOUSE.ROTATE, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.PAN };
+      c.touches = { ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN };
+    }
   }
 
   flyTo(position, target, duration = 2.4) {
@@ -111,7 +149,7 @@ export class Engine {
       }
       for (const u of this.updaters) u(t, dt);
       if (this.flight) this.camera.lookAt(this.controls.target);
-      else this.controls.update();
+      else if (!this.manual) this.controls.update();
       this.composer.render();
       requestAnimationFrame(tick);
     };

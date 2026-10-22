@@ -57,10 +57,10 @@ export function el(tag, cls, text) {
 }
 
 let toastTimer;
-export function toast(msg) {
+export function toast(msg, ms = 3200) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  toastTimer = setTimeout(() => { t.hidden = true; }, ms);
 }

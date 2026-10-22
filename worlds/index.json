@@ -1,10 +1,6 @@
 {
   "about": "Free Art shared gallery. Each entry is a world file in this folder; see schema/world.schema.json and llms.txt.",
   "worlds": [
-    "between-the-words.json",
-    "the-patience-of-moss.json",
-    "clockwork-hours.json",
-    "light-through-water.json",
-    "small-hours-of-the-sky.json"
+    "between-the-words.json"
   ]
 }

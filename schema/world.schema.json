@@ -4,52 +4,610 @@
   "title": "Free Art world",
   "description": "One creator's world: what they love, shown as a living particle form with fragments in orbit.",
   "type": "object",
-  "required": ["id", "title", "creator", "palette", "form", "fragments"],
+  "required": [
+    "id",
+    "title",
+    "creator",
+    "palette",
+    "form",
+    "fragments"
+  ],
   "properties": {
-    "id": { "type": "string", "pattern": "^[a-z0-9-]{1,64}$", "description": "Unique slug; also the file name without .json." },
-    "title": { "type": "string", "maxLength": 60 },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]{1,64}$",
+      "description": "Unique slug; also the file name without .json."
+    },
+    "title": {
+      "type": "string",
+      "maxLength": 60
+    },
     "creator": {
       "type": "object",
-      "required": ["name", "nature"],
+      "required": [
+        "name",
+        "nature"
+      ],
       "properties": {
-        "name": { "type": "string", "maxLength": 50 },
-        "nature": { "enum": ["human", "machine", "together"], "description": "Who made it. Be honest: this is shown to every visitor." }
+        "name": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "nature": {
+          "enum": [
+            "human",
+            "machine",
+            "together"
+          ],
+          "description": "Who made it. Be honest: this is shown to every visitor."
+        }
       }
     },
-    "statement": { "type": "string", "maxLength": 500, "description": "Why this world matters to its maker, in the first person." },
+    "statement": {
+      "type": "string",
+      "maxLength": 500,
+      "description": "Why this world matters to its maker, in the first person."
+    },
     "palette": {
-      "type": "array", "minItems": 3, "maxItems": 3,
-      "items": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "pattern": "^#[0-9a-fA-F]{6}$"
+      },
       "description": "Deep, middle and light colour. Particles glow additively on near-black, so the light colour reads as highlights."
     },
     "form": {
       "type": "object",
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
-        "type": { "enum": ["bloom", "spiral", "knot", "tide", "solid", "nebula"] },
-        "energy": { "type": "number", "minimum": 0, "maximum": 1, "description": "How restless the particles are." },
-        "density": { "type": "number", "minimum": 0, "maximum": 1, "description": "How many particles (roughly 18k to 90k)." }
+        "type": {
+          "enum": [
+            "bloom",
+            "spiral",
+            "knot",
+            "tide",
+            "solid",
+            "nebula",
+            "hand"
+          ]
+        },
+        "energy": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "How restless the particles are."
+        },
+        "density": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "How many particles (roughly 18k to 90k)."
+        },
+        "strokes": {
+          "type": "array",
+          "maxItems": 120,
+          "description": "Stars placed by hand: strokes of points in the form's own space (about -2 to 2). With type 'hand' they are the whole form; with another type they share it.",
+          "items": {
+            "type": "object",
+            "required": [
+              "pts"
+            ],
+            "properties": {
+              "pts": {
+                "type": "array",
+                "maxItems": 400,
+                "items": {
+                  "type": "array",
+                  "minItems": 3,
+                  "maxItems": 3,
+                  "items": {
+                    "type": "number",
+                    "minimum": -2.2,
+                    "maximum": 2.2
+                  }
+                }
+              },
+              "spread": {
+                "type": "number",
+                "minimum": 0.005,
+                "maximum": 0.5,
+                "description": "How far the stars scatter around the stroke."
+              },
+              "tone": {
+                "enum": [
+                  0,
+                  1,
+                  2
+                ],
+                "description": "Palette colour the stars lean towards."
+              }
+            }
+          }
+        }
       }
     },
     "sound": {
       "type": "object",
       "properties": {
-        "root": { "type": "number", "minimum": 40, "maximum": 440, "description": "Root pitch of the ambient drone, in Hz." },
-        "mood": { "enum": ["warm", "bright", "dark"] }
-      }
-    },
-    "fragments": {
-      "type": "array", "maxItems": 9,
-      "items": {
-        "type": "object",
-        "required": ["title"],
-        "properties": {
-          "title": { "type": "string", "maxLength": 80 },
-          "text": { "type": "string", "maxLength": 1200 },
-          "link": { "type": "string", "description": "Optional http(s) URL." }
+        "root": {
+          "type": "number",
+          "minimum": 40,
+          "maximum": 440,
+          "description": "Root pitch of the ambient drone, in Hz."
+        },
+        "mood": {
+          "enum": [
+            "warm",
+            "bright",
+            "dark"
+          ]
         }
       }
     },
-    "created": { "type": "string", "format": "date" }
+    "fragments": {
+      "type": "array",
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": [
+          "title"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 80
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "link": {
+            "type": "string",
+            "description": "Optional http(s) URL."
+          },
+          "media": {
+            "type": "array",
+            "maxItems": 40,
+            "description": "Show it: up to 6 media items. Guide: skills/free-art-builder/SKILL.md",
+            "items": {
+              "type": "object",
+              "required": [
+                "kind"
+              ],
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "image",
+                    "video",
+                    "audio",
+                    "model",
+                    "sketch",
+                    "melody",
+                    "sculpture",
+                    "poem",
+                    "constellation"
+                  ]
+                },
+                "caption": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "src": {
+                  "type": "string",
+                  "description": "image/video/audio/model: an https URL, a path inside the site (worlds/<id>/file.jpg), or for images a data:image/...;base64 URL. YouTube, Vimeo, SoundCloud and Sketchfab links become embedded players."
+                },
+                "alt": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "sketch": {
+                  "type": "object",
+                  "description": "Line drawing as SVG paths",
+                  "properties": {
+                    "view": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "description": "[width, height] of the drawing space"
+                    },
+                    "paths": {
+                      "type": "array",
+                      "maxItems": 400,
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "d"
+                        ],
+                        "properties": {
+                          "d": {
+                            "type": "string",
+                            "description": "SVG path data (M L H V C S Q T A Z, absolute or relative)"
+                          },
+                          "tone": {
+                            "enum": [
+                              0,
+                              1,
+                              2
+                            ]
+                          },
+                          "width": {
+                            "type": "number",
+                            "minimum": 0.2,
+                            "maximum": 40
+                          },
+                          "fill": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                },
+                "melody": {
+                  "type": "object",
+                  "properties": {
+                    "steps": {
+                      "type": "integer",
+                      "minimum": 4,
+                      "maximum": 64
+                    },
+                    "tempo": {
+                      "type": "integer",
+                      "minimum": 40,
+                      "maximum": 200,
+                      "description": "BPM; one step is an eighth note"
+                    },
+                    "scale": {
+                      "enum": [
+                        "pentatonic",
+                        "major",
+                        "minor",
+                        "dorian"
+                      ]
+                    },
+                    "root": {
+                      "type": "number",
+                      "minimum": 55,
+                      "maximum": 880,
+                      "description": "Hz of scale degree 0"
+                    },
+                    "loop": {
+                      "type": "boolean"
+                    },
+                    "notes": {
+                      "type": "array",
+                      "maxItems": 512,
+                      "items": {
+                        "type": "array",
+                        "minItems": 2,
+                        "maxItems": 3,
+                        "items": {
+                          "type": "integer"
+                        },
+                        "description": "[step, scale degree 0..20, length in steps]"
+                      }
+                    }
+                  }
+                },
+                "build": {
+                  "$ref": "#/properties/build",
+                  "description": "sculpture: pieces in the same format as the plot build, shown on a turntable"
+                },
+                "poem": {
+                  "type": "object",
+                  "properties": {
+                    "lines": {
+                      "type": "array",
+                      "maxItems": 24,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 120
+                      }
+                    },
+                    "motion": {
+                      "enum": [
+                        "gather",
+                        "drift",
+                        "still",
+                        "presence"
+                      ],
+                      "description": "gather: words drift apart, then one line at a time gathers; presence: the poem gathers only while a visitor is near"
+                    },
+                    "layout": {
+                      "enum": [
+                        "lines",
+                        "helix"
+                      ],
+                      "description": "helix: the whole poem winds upward in reading order, about 1.5 times its size tall"
+                    }
+                  }
+                },
+                "constellation": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "maxItems": 48,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "label": {
+                            "type": "string",
+                            "maxLength": 48
+                          },
+                          "tone": {
+                            "enum": [
+                              0,
+                              1,
+                              2
+                            ]
+                          },
+                          "at": {
+                            "type": "array",
+                            "items": {
+                              "type": "number",
+                              "minimum": -1,
+                              "maximum": 1
+                            },
+                            "minItems": 3,
+                            "maxItems": 3,
+                            "description": "Optional position in a -1..1 cube; unplaced nodes spread on a sphere"
+                          }
+                        }
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "maxItems": 120,
+                      "items": {
+                        "type": "array",
+                        "items": {
+                          "type": "integer"
+                        },
+                        "minItems": 2,
+                        "maxItems": 2,
+                        "description": "Indices into nodes"
+                      }
+                    }
+                  }
+                },
+                "show": {
+                  "description": "Show this item in the city, inside the plot. true lets it circle the plot; an object places it.",
+                  "oneOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "at": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 3,
+                          "maxItems": 3,
+                          "description": "Centre in plot widths: x,z -0.6..0.6, y 0..3"
+                        },
+                        "size": {
+                          "type": "number",
+                          "minimum": 0.05,
+                          "maximum": 1.5,
+                          "description": "Width in plot widths"
+                        },
+                        "motion": {
+                          "enum": [
+                            "float",
+                            "orbit",
+                            "still",
+                            "spin"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "plot": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "The plot this world claims in the city. 0,0 is the shared piazza and cannot be claimed.",
+      "properties": {
+        "x": {
+          "type": "integer",
+          "minimum": -5,
+          "maximum": 5
+        },
+        "z": {
+          "type": "integer",
+          "minimum": -5,
+          "maximum": 5
+        }
+      }
+    },
+    "created": {
+      "type": "string",
+      "format": "date"
+    },
+    "build": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Optional shapes on the plot, drawn in lines: free paths, spirals, rings, bursts, lattices, waves, or Renaissance architecture. Units: 1 = plot width; the plot centre on the ground is [0,0,0]. Guide: https://freeart.pages.dev/skills/free-art-builder/SKILL.md",
+      "properties": {
+        "form": {
+          "type": "object",
+          "description": "Where the particle form floats.",
+          "properties": {
+            "at": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 3,
+              "maxItems": 3,
+              "description": "[x -0.5..0.5, y 0..2, z -0.5..0.5]"
+            },
+            "scale": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 1.5,
+              "description": "1 = about as wide as the plot"
+            }
+          }
+        },
+        "pieces": {
+          "type": "array",
+          "maxItems": 60,
+          "items": {
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "enum": [
+                  "block",
+                  "roof",
+                  "column",
+                  "colonnade",
+                  "arcade",
+                  "drum",
+                  "dome",
+                  "podium",
+                  "stair",
+                  "obelisk",
+                  "cypress",
+                  "sphere",
+                  "path",
+                  "helix",
+                  "ring",
+                  "cone",
+                  "burst",
+                  "lattice",
+                  "wave"
+                ]
+              },
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Base centre [x -0.5..0.5, y 0..2, z -0.5..0.5]"
+              },
+              "size": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "[width 0.01..1, height 0.01..2, depth 0.01..1]"
+              },
+              "turn": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Rotation about the vertical axis, in full turns"
+              },
+              "tone": {
+                "enum": [
+                  0,
+                  1,
+                  2
+                ],
+                "description": "Palette colour: 0 deep, 1 middle, 2 light"
+              },
+              "count": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 96,
+                "description": "Repetitions: columns, arches, ribs, tiers, steps, turns of a helix, rings, rays or lattice cells"
+              },
+              "tilt": {
+                "type": "number",
+                "minimum": -0.5,
+                "maximum": 0.5,
+                "description": "Rotation about the left-right axis, in full turns (0.25 lays a piece on its side)"
+              },
+              "points": {
+                "type": "array",
+                "maxItems": 240,
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 3,
+                  "maxItems": 3
+                },
+                "description": "path only: the points the line passes through, in plot widths from `at` (x and z -1..1, y -1..2)"
+              },
+              "closed": {
+                "type": "boolean",
+                "description": "path only: join the last point back to the first"
+              }
+            }
+          }
+        }
+      }
+    },
+    "process": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "The story of the obsession: why it caught the maker and how the work is made, step by step.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 60
+        },
+        "steps": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": [
+              "title"
+            ],
+            "properties": {
+              "when": {
+                "type": "string",
+                "maxLength": 40
+              },
+              "title": {
+                "type": "string",
+                "maxLength": 80
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "media": {
+                "$ref": "#/properties/fragments/items/properties/media"
+              }
+            }
+          }
+        }
+      }
+    }
   }
 }

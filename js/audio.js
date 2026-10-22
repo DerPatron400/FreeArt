@@ -56,9 +56,9 @@ export class Sound {
     return buf;
   }
 
-  // world === null plays the cosmos: a low open fifth.
+  // world === null plays the city: a low open fifth.
   setWorld(world, force = false) {
-    const key = world ? `${world.sound.root}:${world.sound.mood}` : 'cosmos';
+    const key = world ? `${world.sound.root}:${world.sound.mood}` : 'city';
     if (!force && key === this.key) { this.world = world; return; }
     this.world = world;
     this.key = key;

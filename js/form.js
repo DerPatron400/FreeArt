@@ -86,6 +86,13 @@ const generators = {
       out(i, e[0] + (e[3] - e[0]) * t + gauss(r) * j, e[1] + (e[4] - e[1]) * t + gauss(r) * j, e[2] + (e[5] - e[2]) * t + gauss(r) * j);
     }
   },
+  // A form drawn by hand starts as a faint, open breath of stars until strokes arrive.
+  hand(n, r, out) {
+    for (let i = 0; i < n; i++) {
+      const v = randomDir(r), d = 1.2 + gauss(r) * 0.35;
+      out(i, v[0] * d, v[1] * d * 0.8, v[2] * d);
+    }
+  },
   nebula(n, r, out) {
     const clumps = Array.from({ length: 6 + Math.floor(r() * 5) }, () => ({
       c: [gauss(r) * 0.8, gauss(r) * 0.5, gauss(r) * 0.8], s: 0.18 + r() * 0.38,
@@ -104,7 +111,7 @@ function randomDir(r) {
   return [Math.cos(a) * s, u, Math.sin(a) * s];
 }
 
-const NOISE = /* glsl */ `
+export const NOISE = /* glsl */ `
 vec4 permute(vec4 x){ return mod(((x*34.0)+1.0)*x, 289.0); }
 vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - 0.85373472095314 * r; }
 float snoise(vec3 v){
@@ -203,7 +210,7 @@ export function densityToCount(density, lod = 1) {
   return Math.round((18000 + density * 72000) * lod);
 }
 
-export function buildGeometry(type, count, seed) {
+export function buildGeometry(type, count, seed, strokes) {
   const r = rng(seed + ':' + type);
   const pos = new Float32Array(count * 3);
   const rand = new Float32Array(count * 4);
@@ -211,6 +218,35 @@ export function buildGeometry(type, count, seed) {
     pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
   });
   for (let i = 0; i < rand.length; i++) rand[i] = r();
+  // Stars placed by hand take over a share of the particles, spread along each stroke.
+  if (strokes?.length) {
+    const segs = [];
+    let total = 0;
+    for (const st of strokes) {
+      const p = st.pts;
+      if (p.length === 1) { segs.push({ a: p[0], b: p[0], len: 0.04, st }); total += 0.04; }
+      for (let k = 1; k < p.length; k++) {
+        const len = Math.hypot(p[k][0] - p[k - 1][0], p[k][1] - p[k - 1][1], p[k][2] - p[k - 1][2]) + 0.002;
+        segs.push({ a: p[k - 1], b: p[k], len, st });
+        total += len;
+      }
+    }
+    const share = type === 'hand' ? 0.92 : 0.5;
+    const k0 = Math.floor(count * (1 - share));
+    let si = 0, acc = segs[0].len;
+    for (let i = k0; i < count; i++) {
+      // Walk the strokes evenly, so long strokes get more stars than short ones.
+      const want = ((i - k0 + r()) / (count - k0)) * total;
+      while (acc < want && si < segs.length - 1) acc += segs[++si].len;
+      const { a, b, st } = segs[si];
+      const t = r(), sp = st.spread * (0.35 + Math.abs(gauss(r)));
+      pos[i * 3] = a[0] + (b[0] - a[0]) * t + gauss(r) * sp;
+      pos[i * 3 + 1] = a[1] + (b[1] - a[1]) * t + gauss(r) * sp;
+      pos[i * 3 + 2] = a[2] + (b[2] - a[2]) * t + gauss(r) * sp;
+      // The colour channel (aRand.x picks the palette tone in the shader): lean towards the stroke's tone.
+      rand[i * 4] = Math.min(0.999, Math.max(0, st.tone / 2 * 0.8 + r() * 0.2));
+    }
+  }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('aRand', new THREE.BufferAttribute(rand, 4));
@@ -220,7 +256,7 @@ export function buildGeometry(type, count, seed) {
 
 export function createForm(world, { lod = 1, size = 1 } = {}) {
   const count = densityToCount(world.form.density, lod);
-  const geometry = buildGeometry(world.form.type, count, world.id);
+  const geometry = buildGeometry(world.form.type, count, world.id, world.form.strokes);
   const uniforms = {
     uTime: { value: 0 },
     uEnergy: { value: world.form.energy },
