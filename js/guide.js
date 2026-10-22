@@ -7,7 +7,8 @@ import { MAX_MEDIA, SHOWABLE, MOTIONS, NEAR, sketchSvg, melodyPlayer } from './m
 import { exhibitItems } from './exhibit.js';
 import { sketchPad, melodyGrid } from './tools.js';
 import { imageToData } from './editor.js';
-import { FORMS, MAX_STROKES, BRUSHES } from './store.js';
+import { FORMS, MAX_STROKES, BRUSHES, STROKE_REACH } from './store.js';
+import { fillStrokes } from './fill.js';
 import { isOnline, space } from './server.js';
 
 // Each feeling sets colours, form, movement and sound together.
@@ -217,7 +218,17 @@ export class Guide {
 
     const { wrap: words } = writeBox(this.w.statement, tr('g.statementPh'), 4, (v) => { this.w.statement = v.slice(0, 500); this.changed(); });
 
-    page.append(top, name, by, words, this.shelf(), this.thingsList(), this.textsList(), this.looks(), this.finish());
+    // Four chapters in the order people think of them: who and what, the things, the particles, done.
+    const chapter = (n, title, help) => {
+      const head = el('div', 'g-chapter');
+      head.append(el('h3', 'g-chapter__title', `${n} · ${title}`));
+      if (help) head.append(el('p', 'g-help', help));
+      return head;
+    };
+    page.append(top, chapter(1, tr('g.step1')), name, by, words,
+      chapter(2, tr('g.step2'), tr('g.step2Help')), this.shelf(), this.thingsList(), this.textsList(),
+      chapter(3, tr('g.step3'), tr('g.step3Help')), this.particles(),
+      chapter(4, tr('g.step4')), this.finish());
     this.root.replaceChildren(page);
   }
 
@@ -225,7 +236,6 @@ export class Guide {
 
   shelf() {
     const wrap = el('section', 'g-shelf');
-    wrap.append(el('h3', 'g-h', tr('g.add')));
     const tiles = el('div', 'g-tiles');
     const tools = [
       [tr('g.text'), () => this.addText()],
@@ -235,7 +245,6 @@ export class Guide {
       [tr('g.video'), () => this.addVideo()],
       [tr('g.tune'), () => this.addTune()],
       [tr('g.words'), () => this.addThing({ kind: 'poem', poem: { lines: [], motion: 'gather' } })],
-      [tr('g.stars'), () => this.togglePaint()],
       [tr('g.objects'), () => this.addObject()],
     ];
     for (const [label, fn] of tools) {
@@ -243,9 +252,7 @@ export class Guide {
       t.addEventListener('click', fn);
       tiles.append(t);
     }
-    this.paintPanel = el('div', 'g-paint');
-    this.paintPanel.hidden = true;
-    wrap.append(tiles, this.paintPanel);
+    wrap.append(tiles);
     return wrap;
   }
 
@@ -393,7 +400,6 @@ export class Guide {
     // The star colours are the world's colours: change them here and the brush follows.
     this.syncs.set('paint', []);
     this.syncs.get('paint').push(() => tones.querySelectorAll('.g-dot').forEach((b, i) => { b.style.background = this.w.palette[i]; }));
-    const look = this.lookControls('paint');
     const undo = button(tr('g.undo'), 'g-btn g-btn--soft');
     undo.addEventListener('click', () => { this.w.form.strokes?.pop(); if (!this.w.form.strokes?.length) delete this.w.form.strokes; this.changed(); });
     const clear = button(tr('g.clear'), 'g-btn g-btn--soft');
@@ -408,8 +414,7 @@ export class Guide {
     done.addEventListener('click', () => this.stopPaint());
     const row = el('div', 'g-choice');
     row.append(undo, clear, turn, done);
-    p.replaceChildren(el('p', 'g-help', tr('g.paintHelp')), el('p', 'g-help', tr('brush.label')), brushes, tones, softL,
-      el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density, row);
+    p.replaceChildren(el('p', 'g-help', tr('g.paintHelp')), el('p', 'g-help', tr('brush.label')), brushes, tones, softL, row);
     this.paint();
   }
 
@@ -558,13 +563,18 @@ export class Guide {
   arrangeBar() {
     const bar = el('div', 'g-arrange');
     bar.append(el('p', 'g-help', tr('g.arrange')));
-    const row = el('div', 'g-choice');
-    for (const id of ['surprise', 'spiral', 'bloom', 'wave', 'arch', 'knot', 'centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']) {
-      const b = button(tr('arrange.' + id), 'g-pill');
-      b.addEventListener('click', () => this.arrange(id));
-      row.append(b);
-    }
-    bar.append(row, el('p', 'g-help g-help--quiet', tr('g.arrangeHint')));
+    const pills = (ids) => {
+      const row = el('div', 'g-choice');
+      for (const id of ids) {
+        const b = button(tr('arrange.' + id), 'g-pill' + (id === 'surprise' ? ' g-pill--lead' : ''));
+        b.addEventListener('click', () => this.arrange(id));
+        row.append(b);
+      }
+      return row;
+    };
+    const more = el('details', 'g-more');
+    more.append(el('summary', null, tr('g.moreArrange')), pills(['centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']));
+    bar.append(pills(['surprise', 'spiral', 'bloom', 'wave', 'arch', 'knot']), el('p', 'g-help g-help--quiet', tr('g.arrangeHint')), more);
     return bar;
   }
 
@@ -669,13 +679,13 @@ export class Guide {
     this.arrangeEl = this.arrangeBar();
     this.drawThings();
     const wrap = el('div');
-    wrap.append(this.arrangeEl, this.thingsEl);
+    wrap.append(this.thingsEl, this.arrangeEl);
     return wrap;
   }
 
   drawThings() {
     const list = this.things();
-    if (this.arrangeEl) this.arrangeEl.hidden = list.filter((m) => m.show && SHOWABLE.includes(m.kind)).length < 1;
+    if (this.arrangeEl) this.arrangeEl.hidden = list.filter((m) => m.show && SHOWABLE.includes(m.kind)).length < 2; // arranging needs at least two
     this.thingsEl.replaceChildren(...list.map((m, k) => this.card(m, k, list)));
   }
 
@@ -789,26 +799,56 @@ export class Guide {
 
   // ---- look and feel ----
 
-  looks() {
-    const sec = el('details', 'g-looks');
-    sec.append(el('summary', 'g-h', tr('g.looks')));
-    const grid = el('div', 'g-feel');
+  // The particles: one big button that fills the plot with flowing shapes, drawing
+  // by hand, none at all, a mood; the finer controls folded under "More options".
+  particles() {
+    const sec = el('section', 'g-particles');
     this.syncs.set('looks', []);
     const look = this.lookControls('looks');
+    const fill = button(tr('g.fill'), 'g-btn g-btn--main g-fill');
+    const back = button(tr('g.fillUndo'), 'g-btn g-btn--soft');
+    back.hidden = true;
+    fill.addEventListener('click', () => {
+      const box = this.getRoom()?.form;
+      if (!box) return;
+      this.stopPaint();
+      if (back.hidden) this.beforeFill = structuredClone(this.w.form); // the first press remembers how it was
+      this.w.form = { ...this.w.form, type: 'hand', strokes: fillStrokes(box, { limit: STROKE_REACH }), density: Math.max(this.w.form.density, 0.75) }; // a whole plot wants plenty of particles
+      delete this.w.form.hidden;
+      back.hidden = false;
+      this.changed();
+    });
+    back.addEventListener('click', () => {
+      if (this.beforeFill) this.w.form = this.beforeFill;
+      this.beforeFill = null;
+      back.hidden = true;
+      this.changed();
+    });
+    const draw = button(tr('g.stars'), 'g-btn g-btn--soft');
+    draw.addEventListener('click', () => this.togglePaint());
+    const row = el('div', 'g-choice');
+    row.append(back, draw);
+    this.paintPanel = el('div', 'g-paint');
+    this.paintPanel.hidden = true;
+
+    const grid = el('div', 'g-feel');
     for (const f of FEELINGS) {
       const b = button('', 'g-feel__card');
       const sw = el('span', 'g-feel__swatch');
       for (const c of f.palette) { const s = el('i'); s.style.background = c; sw.append(s); }
       b.append(sw, el('b', null, tr('feel.' + f.id)));
+      // A mood brings colours, sound and movement; particles already shaped by hand or filled stay.
       b.addEventListener('click', () => {
         const keep = this.w.form.type === 'hand';
-        Object.assign(this.w, { palette: f.palette.slice(), form: { ...f.form, type: keep ? 'hand' : f.form.type, strokes: this.w.form.strokes }, sound: { ...f.sound } });
+        Object.assign(this.w, { palette: f.palette.slice(), form: { ...f.form, type: keep ? 'hand' : f.form.type, strokes: this.w.form.strokes, ...(this.w.form.hidden ? { hidden: true } : {}) }, sound: { ...f.sound } });
         if (!this.w.form.strokes) delete this.w.form.strokes;
         this.changed();
       });
       grid.append(b);
     }
-    sec.append(grid, el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density);
+    const more = el('details', 'g-looks');
+    more.append(el('summary', 'g-h', tr('g.more')), el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density);
+    sec.append(fill, el('p', 'g-help g-help--quiet', tr('g.fillHelp')), row, this.paintPanel, el('p', 'g-help', tr('g.mood')), grid, more);
     return sec;
   }
 

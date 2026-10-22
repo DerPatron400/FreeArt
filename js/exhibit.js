@@ -604,7 +604,9 @@ export function createExhibit(world, U, mid) {
   });
   // Where each piece stands and how it moves: read again whenever the maker moves it,
   // without rebuilding (and so without reloading) anything.
+  let current = items;
   const place = (list) => {
+    current = list;
     const free = list.filter((m) => !m.show?.at);
     for (const p of pieces) {
       const m = list[p.index];
@@ -627,7 +629,7 @@ export function createExhibit(world, U, mid) {
     }
   };
   place(items);
-  const look = new THREE.Vector3();
+  const look = new THREE.Vector3(), cube = new THREE.Box3(), at = new THREE.Vector3(), ws = new THREE.Vector3();
   const ease = (x) => x * x * (3 - 2 * x);
   return {
     group,
@@ -639,12 +641,53 @@ export function createExhibit(world, U, mid) {
       return true;
     },
     holderOf(index) { return pieces.find((p) => p.index === index)?.holder; },
+    // The piece under a ray: its own surfaces first (so a picture in front of a big poem
+    // wins), else the piece whose standing cube the ray passes closest to the middle of.
+    pick(raycaster) {
+      const ray = raycaster.ray, shown = pieces.filter((p) => p.holder.scale.x >= p.scale * 0.2); // 'appear'/'rise' pieces still far off are skipped
+      const holders = new Map(shown.map((p) => [p.holder, p]));
+      const result = (p) => {
+        const h = p.holder;
+        return { index: p.index, holder: h, centre: h.getWorldPosition(new THREE.Vector3()), radius: p.size0 * h.getWorldScale(ws).x * 0.55, item: current[p.index], solid: !!p.piece.solid };
+      };
+      const layers = raycaster.layers.mask;
+      raycaster.layers.enableAll();
+      let hits = [];
+      try { hits = raycaster.intersectObjects(shown.filter((p) => !p.piece.lazy).map((p) => p.holder), true); } catch {}
+      raycaster.layers.mask = layers;
+      // Words and constellations are airy: a picture or film seen through them still wins.
+      const airy = (p) => ['poem', 'constellation', 'melody'].includes(current[p.index].kind);
+      let first = null;
+      for (const hit of hits) {
+        if (hit.object.isLine) continue;
+        let o = hit.object, ok = true;
+        while (o && !holders.has(o)) { if (!o.visible) ok = false; o = o.parent; }
+        if (!o || !ok || !o.visible) continue;
+        const p = holders.get(o);
+        if (!airy(p)) return result(p);
+        first ||= p;
+      }
+      let best = null, score = Infinity;
+      for (const p of shown) {
+        if (first && airy(p)) continue; // past airy words, look only for a solid piece close to the ray
+        const h = p.holder, r = p.size0 * h.getWorldScale(ws).x * 0.55;
+        h.getWorldPosition(look);
+        if (!ray.intersectBox(cube.setFromCenterAndSize(look, ws.setScalar(r * 2)), at)) continue;
+        const k = Math.sqrt(ray.distanceSqToPoint(look)) / r;
+        if (k < score && (!first || k < 0.8)) { score = k; best = p; }
+      }
+      best ||= first;
+      return best && result(best);
+    },
+    // Keep one piece where it is (while someone looks at it closely), or let it move again.
+    hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
     update(t, dt, camera, { audible = false, presence = 0, dist = 0 } = {}) {
       for (const p of pieces) {
         if (p.piece.lazy && (dist < 45 || presence > 0.5)) p.piece.lazy.load(); // near, or the plot someone chose
         const h = p.holder;
+        if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
         // 'wake': stillness from afar, motion as you come; the others keep the shared clock.

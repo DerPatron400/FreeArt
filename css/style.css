@@ -469,3 +469,53 @@ body.is-busy, body.is-busy * { cursor: progress !important; }
 .g-centre { align-self: flex-start; }
 .g-range .g-axis__num { flex: 0 0 auto; width: 4.6em; padding: 0.25em 0.35em; font: inherit; font-size: 0.9em; color: inherit; background: transparent; border: 1px solid rgba(236, 228, 212, 0.25); border-radius: 6px; text-align: right; }
 .g-help--quiet { font-size: 13px; opacity: 0.7; margin-top: 6px; }
+
+/* ---- Looking closely: a piece flown into, its words arriving one by one ---- */
+/* filter, not opacity: these panels rise in with animations that hold their opacity */
+body.is-focus .labels, body.is-focus .hint, body.is-focus .world-info, body.is-focus .story, body.is-focus .fragment { filter: opacity(0); pointer-events: none; transition: filter 0.6s var(--ease); }
+body.is-focus .labels *, body.is-focus .world-info *, body.is-focus .story *, body.is-focus .fragment * { pointer-events: none !important; }
+.focus { position: fixed; inset: 0; z-index: 12; pointer-events: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 96px 24px 28px; box-sizing: border-box; }
+.focus > * { pointer-events: auto; }
+.focus--full { background: rgba(11, 10, 9, 0); transition: background 0.9s var(--ease); }
+.focus--full.is-arrived { background: rgba(11, 10, 9, 0.94); pointer-events: auto; }
+.focus__back { position: fixed; top: 84px; left: 24px; background: rgba(11, 10, 9, 0.6); border: 1px solid var(--faint); border-radius: 999px; padding: 9px 16px; cursor: pointer; color: var(--paper); opacity: 0; transform: translateY(-6px); transition: opacity 0.6s var(--ease), transform 0.6s var(--ease), border-color 0.3s; }
+.focus__back:hover { border-color: var(--gold); }
+.focus.is-open .focus__back { opacity: 1; transform: none; }
+.focus__media { flex: 0 1 auto; min-height: 0; display: flex; justify-content: center; width: 100%; opacity: 0; transform: scale(0.97); transition: opacity 0.9s var(--ease), transform 1.1s var(--ease); }
+.focus.is-arrived .focus__media { opacity: 1; transform: none; }
+.focus__media img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.focus__media video { width: 100%; height: 100%; max-width: 1600px; object-fit: contain; display: block; }
+.focus__media iframe { width: min(100%, 1280px); height: auto; max-height: 100%; border: 0; display: block; }
+.focus--full .focus__media { height: 100%; }
+.focus--full:has(.focus__words) .focus__media { height: 68%; }
+.focus__words { max-width: 640px; max-height: 34vh; overflow-y: auto; text-align: center; cursor: default; }
+.focus:not(.focus--full) { justify-content: flex-end; align-items: flex-start; }
+.focus:not(.focus--full) .focus__words { text-align: left; max-width: 520px; padding: 18px 22px; background: rgba(11, 10, 9, 0.62); border: 1px solid var(--faint); border-radius: 4px; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.focus__kicker { color: var(--gold); margin: 0 0 8px; }
+.focus__title { font-size: 34px; font-style: italic; font-weight: 300; line-height: 1.15; margin: 0 0 10px; }
+.focus__caption { font-size: 22px; font-style: italic; line-height: 1.35; color: var(--paper); margin: 0 0 10px; }
+.focus__text { font-size: 19px; line-height: 1.6; color: rgba(236, 228, 212, 0.86); margin: 0 0 10px; }
+.focus__word { display: inline-block; opacity: 0; transform: translateY(0.45em); filter: blur(5px); transition: opacity 0.9s var(--ease), transform 1.2s var(--ease), filter 0.9s var(--ease); }
+.focus__word.is-in { opacity: 1; transform: none; filter: none; }
+@media (max-width: 760px) {
+  .focus { padding: 76px 16px 16px; gap: 14px; }
+  .focus__back { top: 64px; left: 16px; }
+  .focus__words, .focus:not(.focus--full) .focus__words { max-width: none; width: 100%; max-height: 38vh; }
+  .focus__title { font-size: 26px; }
+  .focus__caption { font-size: 19px; }
+  .focus__text { font-size: 17px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus__word { transition: none; transform: none; filter: none; }
+}
+
+/* The studio in four chapters */
+.g-chapter { border-top: 1px solid var(--faint); padding-top: 22px; margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.g-chapter__title { margin: 0; font: italic 300 27px/1.15 var(--serif); color: var(--paper); }
+.g-particles { display: flex; flex-direction: column; gap: 12px; }
+.g-fill { width: 100%; font-size: 18px; padding: 16px 20px; }
+.g-pill--lead { border-color: var(--gold); color: var(--gold); }
+.g-more > summary { cursor: pointer; list-style: none; padding: 6px 0; font: 14px var(--ui); color: var(--muted); }
+.g-more > summary::before { content: '+ '; }
+.g-more[open] > summary::before { content: '− '; }
+.g-arrange { display: flex; flex-direction: column; gap: 8px; }

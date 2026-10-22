@@ -110,8 +110,8 @@
                   "maxItems": 3,
                   "items": {
                     "type": "number",
-                    "minimum": -2.2,
-                    "maximum": 2.2
+                    "minimum": -16,
+                    "maximum": 16
                   }
                 }
               },

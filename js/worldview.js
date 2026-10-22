@@ -4,6 +4,8 @@ import { createForm, disposeForm, updateFormLook } from './form.js';
 import { roman, el, rng, lerp } from './util.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createExhibit, exhibitItems, exhibitTop } from './exhibit.js';
+import { embedFor, ctx, pluck } from './media.js';
+import { t as tr } from './i18n.js';
 
 let glowTexture;
 function glow() {
@@ -40,6 +42,7 @@ export class WorldView {
     engine.updaters.add((t, dt) => this.update(t, dt));
     this.bindPainting();
     this.bindPlacing();
+    this.bindFocus();
   }
 
   // ---- placing stars by hand (in the workshop) ----
@@ -175,6 +178,195 @@ export class WorldView {
     canvas.addEventListener('pointercancel', end);
   }
 
+  // ---- looking closely (in the gallery) ----
+
+  // Click a piece and the camera flies to it: pictures and films then fill the screen,
+  // 3D pieces stay in the scene to be turned around; what the maker wrote about it
+  // appears word by word, each word with a soft note. Esc, the back button or a click
+  // beside it flies you back to where you stood.
+  bindFocus() {
+    const e = this.engine, canvas = e.canvas;
+    canvas.addEventListener('click', () => {
+      if (!this.canFocus() || e.flight || e.dragDistance >= 6) return;
+      const hit = this.pickPiece();
+      if (hit) this.focus(hit);
+      else if (this.focused) this.unfocus();
+    });
+  }
+
+  canFocus() { return this.group.visible && !this.preview && !this.painting && !this.placing && !!this.exhibit; }
+
+  pickPiece() {
+    const e = this.engine;
+    if (e.pointer.x < -2) return null;
+    e.raycaster.setFromCamera(e.pointer, e.camera);
+    return this.exhibit.pick(e.raycaster);
+  }
+
+  focus(hit) {
+    const e = this.engine, cam = e.camera;
+    if (this.focused?.index === hit.index) return;
+    if (!this.focused) {
+      this.home = { pos: cam.position.clone(), target: e.controls.target.clone(), min: e.controls.minDistance, max: e.controls.maxDistance, offset: [...e.viewOffset] };
+    } else this.clearFocusView();
+    this.focused = hit;
+    this.exhibit.hold(hit.index);
+    e.controls.autoRotate = false;
+    this.offsetGoal = [0, 0]; // the picture glides to the middle of the screen
+    document.body.classList.add('is-focus');
+    // Pictures and films are faced square on; solid pieces from where you stand.
+    const kind = hit.item.kind, flat = kind === 'image' || kind === 'video' || kind === 'sketch';
+    const dir = new THREE.Vector3();
+    if (flat) dir.set(0, 0, 1).applyQuaternion(hit.holder.getWorldQuaternion(new THREE.Quaternion()));
+    else dir.copy(cam.position).sub(hit.centre).setY(Math.max(0, cam.position.y - hit.centre.y) * 0.4);
+    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.normalize();
+    const half = Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2), size = hit.radius / 0.55;
+    const d = flat
+      ? Math.max((size * 0.5) / (half * cam.aspect), (size * 0.4) / half) * 1.12
+      : (hit.radius * 1.15) / half;
+    Object.assign(e.controls, { minDistance: d * 0.35, maxDistance: Math.max(d * 4, 6) });
+    const token = this.focusToken = {};
+    this.focusView(hit, flat);
+    e.flyTo(hit.centre.clone().addScaledVector(dir, d), hit.centre, 1.5).then(() => {
+      if (this.focusToken === token) this.focusEl?.classList.add('is-arrived');
+    });
+  }
+
+  unfocus({ instant = false } = {}) {
+    if (!this.focused) return;
+    const e = this.engine, home = this.home;
+    this.focused = null;
+    const token = this.focusToken = {};
+    this.clearFocusView();
+    document.body.classList.remove('is-focus');
+    // The old limits go back before the flight, or the first frame after it would clamp the camera.
+    Object.assign(e.controls, { minDistance: home.min, maxDistance: home.max });
+    const done = () => {
+      if (this.focusToken !== token) return;
+      this.exhibit?.hold(-1);
+      e.controls.autoRotate = !this.preview && this.group.visible;
+    };
+    if (instant) { this.offsetGoal = null; e.setViewOffset(...home.offset); e.flight = null; e.controls.enabled = true; return done(); }
+    this.offsetGoal = home.offset;
+    e.flyTo(home.pos, home.target, 1.3).then(done);
+  }
+
+  // Per frame: glide the picture's offset, and show a hand over pieces that can be looked at.
+  focusFrame(dt) {
+    const e = this.engine;
+    if (this.offsetGoal) {
+      const [x, y] = e.viewOffset, [gx, gy] = this.offsetGoal, k = Math.min(1, dt * 3.5);
+      const done = Math.abs(gx - x) + Math.abs(gy - y) < 0.5;
+      e.setViewOffset(done ? gx : x + (gx - x) * k, done ? gy : y + (gy - y) * k);
+      if (done) this.offsetGoal = null;
+    }
+    const over = this.canFocus() && !e.flight && !!this.pickPiece();
+    if (over !== this.overPiece) { this.overPiece = over; document.body.style.cursor = over ? 'pointer' : ''; }
+  }
+
+  // What the maker wrote about this piece: its caption, and the step or fragment it belongs to.
+  wordsFor(item) {
+    const w = this.world, same = (m) => m === item || (m.kind === item.kind && (item.src ? m.src === item.src : JSON.stringify({ ...m, show: 0 }) === JSON.stringify({ ...item, show: 0 })));
+    const steps = w.process?.steps || [];
+    let where = steps.findIndex((s) => s.media.some(same)), title = '', text = '', kicker = '';
+    if (where >= 0) { title = steps[where].title; text = steps[where].text || ''; kicker = [roman(where + 1), steps[where].when].filter(Boolean).join(' · '); }
+    else {
+      where = w.fragments.findIndex((f) => (f.media || []).some(same));
+      if (where >= 0) { title = w.fragments[where].title; text = w.fragments[where].text || ''; kicker = roman(where + 1); }
+    }
+    return { kicker, title, caption: item.caption || '', text };
+  }
+
+  focusView(hit, flat) {
+    const item = hit.item, root = el('div', 'focus' + (flat && item.kind !== 'sketch' ? ' focus--full' : ''));
+    const back = el('button', 'focus__back mono', tr('focus.back'));
+    back.type = 'button';
+    back.addEventListener('click', (ev) => { ev.stopPropagation(); this.unfocus(); });
+    root.append(back);
+    if (item.kind === 'image' || item.kind === 'video') {
+      const stage = el('div', 'focus__media');
+      const embed = item.kind === 'video' && embedFor(item.src);
+      if (item.kind === 'image') stage.append(Object.assign(el('img'), { src: item.src, alt: item.alt || item.caption || '', decoding: 'async' }));
+      else if (embed) {
+        const f = el('iframe');
+        Object.assign(f, { src: embed.url + (embed.url.includes('?') ? '&' : '?') + 'autoplay=1', title: item.caption || 'Video', allow: 'autoplay; fullscreen; picture-in-picture', allowFullscreen: true, referrerPolicy: 'strict-origin-when-cross-origin' });
+        if (embed.ratio) f.style.aspectRatio = String(embed.ratio);
+        stage.append(f);
+      } else {
+        const v = Object.assign(el('video'), { src: item.src, controls: true, autoplay: true, loop: true, playsInline: true });
+        v.muted = !document.body.classList.contains('sound-on');
+        stage.append(v);
+      }
+      // A click beside the picture goes back; on the picture itself it stays.
+      root.addEventListener('click', (ev) => { if (ev.target === root || ev.target === stage) this.unfocus(); });
+      root.append(stage);
+    }
+    const words = this.wordsFor(item);
+    if (words.title || words.caption || words.text) root.append(this.kinetic(words));
+    document.body.append(root);
+    this.focusEl = root;
+    requestAnimationFrame(() => root.classList.add('is-open'));
+  }
+
+  // The words arrive one at a time, each with a quiet plucked note from the world's own key.
+  kinetic({ kicker, title, caption, text }) {
+    const box = el('div', 'focus__words');
+    if (kicker) box.append(el('p', 'mono focus__kicker', kicker));
+    const lines = [];
+    if (title) lines.push(['focus__title', title]);
+    if (caption && caption !== title) lines.push(['focus__caption', caption]);
+    if (text) for (const para of text.split(/\n+/).filter(Boolean)) lines.push(['focus__text', para]);
+    const spans = [];
+    for (const [cls, line] of lines) {
+      const p = el('p', cls);
+      for (const word of line.split(/\s+/).filter(Boolean)) {
+        const s = el('span', 'focus__word', word);
+        p.append(s, ' ');
+        spans.push({ s, word, cls });
+      }
+      box.append(p);
+    }
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const root = this.world.sound?.root || 110;
+    const scale = [0, 2, 4, 7, 9, 12, 14, 16];
+    let i = 0, degree = 2;
+    const step = () => {
+      if (!box.isConnected && i > 0) return;
+      const w = spans[i++];
+      if (!w) return;
+      w.s.classList.add('is-in');
+      if (document.body.classList.contains('sound-on')) {
+        // A gentle walk through the scale; headings sit lower, sentence ends come home.
+        degree = Math.max(0, Math.min(scale.length - 1, degree + ((w.word.length % 3) - 1)));
+        if (/[.!?…。！？]$/.test(w.word)) degree = 0;
+        const base = w.cls === 'focus__text' ? 2 : 1;
+        try { const ac = ctx(); ac?.resume(); if (ac) pluck(ac, root * base * Math.pow(2, scale[degree] / 12), 0.5, w.cls === 'focus__text' ? 0.05 : 0.08); } catch {}
+      }
+      const pause = /[.!?…。！？]$/.test(w.word) ? 700 : /[,;:—]$/.test(w.word) ? 380 : 0;
+      this.wordTimer = setTimeout(step, 170 + Math.min(14, w.word.length) * 28 + pause + (w.cls === 'focus__title' ? 180 : 0));
+    };
+    if (still) spans.forEach((w) => w.s.classList.add('is-in'));
+    else this.wordTimer = setTimeout(step, 1300); // once the flight is nearly there
+    // A click on the words shows them all at once.
+    box.addEventListener('click', (ev) => { ev.stopPropagation(); clearTimeout(this.wordTimer); spans.forEach((w) => w.s.classList.add('is-in')); });
+    return box;
+  }
+
+  clearFocusView() {
+    clearTimeout(this.wordTimer);
+    const root = this.focusEl;
+    this.focusEl = null;
+    if (!root) return;
+    root.classList.remove('is-open');
+    root.querySelector('video')?.pause();
+    setTimeout(() => {
+      const v = root.querySelector('video');
+      if (v) { v.removeAttribute('src'); v.load(); }
+      root.remove();
+    }, 600);
+  }
+
   // Keep the form clear of the text: beside it on wide screens, above it on phones.
   // While the story panel is open on the right, the form moves into the space left of it.
   frame({ reading = false } = {}) {
@@ -187,7 +379,8 @@ export class WorldView {
 
   show(world, { preview = false, plot = null } = {}) {
     this.preview = preview;
-    this.plot = preview ? plot : null;
+    this.plot = preview ? plot : null; // the outline of the plot shows only in the studio
+    this.cell = plot; // but the form always stands in it as it does in the city
     this.roomDist = 0;
     this.setWorld(world, { rebuild: true });
     this.group.visible = true;
@@ -207,6 +400,8 @@ export class WorldView {
 
   hide() {
     clearTimeout(this.pending);
+    this.unfocus({ instant: true });
+    if (this.overPiece) { this.overPiece = false; document.body.style.cursor = ''; }
     this.setPlacing(null);
     this.nearPreview = null;
     if (this.painting) this.setPainting(false);
@@ -290,7 +485,14 @@ export class WorldView {
     this.fit = 1;
     if (!w.build && !exhibitItems(w).length) return this.outline();
     const U = 5.2, top = Math.max(buildTop(w.build), exhibitTop(w), 0.6) * U;
-    const place = formPlacement(w, U, w.build ? top : U * 0.6);
+    let place = formPlacement(w, U, w.build ? top : U * 0.6);
+    // Standing in a known plot, the form takes the same place and size as in the city,
+    // so particles drawn or filled here land where everyone will see them.
+    const c = this.cell;
+    if (c && !w.build?.form) {
+      const Uc = Math.min(c.w, c.d), H = Math.max(c.h0, buildTop(w.build) * Uc + 0.15, exhibitTop(w) * Uc + 0.15);
+      place = formPlacement(w, U, H * (U / Uc));
+    }
     this.build = createBuild(w.build, w.palette, U);
     this.build.position.y = -top / 2;
     this.exhibit = createExhibit(w, U, w.build ? buildTop(w.build) * U * 0.45 : U * 0.3);
@@ -360,7 +562,11 @@ export class WorldView {
     parent.add(this.plotBox);
     // Step back far enough to see the whole room.
     this.group.updateMatrixWorld(true);
-    const sphere = new THREE.Box3().setFromObject(this.plotBox).getBoundingSphere(new THREE.Sphere());
+    const box = new THREE.Box3().setFromObject(this.plotBox);
+    // The same room in the form's own space (where stars by hand are drawn), for filling it.
+    const fp = this.form.getWorldPosition(new THREE.Vector3()), fs = this.form.getWorldScale(new THREE.Vector3()).x;
+    this.room.form = { min: box.min.clone().sub(fp).divideScalar(fs).toArray(), max: box.max.clone().sub(fp).divideScalar(fs).toArray() };
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
     const e = this.engine, want = this.roomDist = sphere.radius * 2.3;
     e.controls.maxDistance = Math.max(24, want * 1.6);
     if (this.group.visible && !e.flight) {
@@ -430,6 +636,7 @@ export class WorldView {
     this.form.visible = !this.world.form.hidden || !!this.painting; // while drawing stars you see them
     if (this.preview) this.form.rotation.y = 0;
     else if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
+    this.focusFrame(dt);
     this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1 });
     this.updateMarker();
     const e = this.engine;

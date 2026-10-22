@@ -2,7 +2,7 @@
 import { Engine } from './engine.js';
 import { City, plotNumber, plotCell } from './city.js';
 import { WorldView } from './worldview.js';
-import { useEngine } from './exhibit.js';
+import { useEngine, exhibitItems } from './exhibit.js';
 import { Editor } from './editor.js';
 import { Sound } from './audio.js';
 import { createDust } from './form.js';
@@ -329,9 +329,9 @@ function route() {
     $('wi-story').hidden = !w.process;
     storyWorld = w;
     $('world-info').hidden = false;
-    worldView.show(w);
+    worldView.show(w, { plot: p && plotCell(p.x, p.z) });
     sound.setWorld(w);
-    setHint(w.fragments.length ? t('hint.worldFragments') : t('hint.world'));
+    setHint((w.fragments.length ? t('hint.worldFragments') : t('hint.world')) + (exhibitItems(w).length ? ' · ' + t('hint.lookClose') : ''));
     document.title = `${w.title} · Free Art`;
     return;
   }
@@ -386,6 +386,7 @@ function showCity() {
 window.addEventListener('hashchange', route);
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || view === 'create') return;
+  if (worldView.focused) return worldView.unfocus();
   if (!$('fragment').hidden) closeFragment();
   else if (!$('story').hidden) closeStory();
   else if (!plotPanel.hidden) city.select(null);

@@ -77,14 +77,15 @@ export function normalizeWorld(raw) {
   };
 }
 
-// Stars placed by hand: strokes of points in the form's own space (about -2 to 2).
-export const MAX_STROKES = 120, MAX_STROKE_POINTS = 400;
+// Stars placed by hand: strokes of points in the form's own space (the form itself spans
+// about -2 to 2; up to STROKE_REACH, to fill the far corners of a tall plot).
+export const MAX_STROKES = 120, MAX_STROKE_POINTS = 400, STROKE_REACH = 16;
 // How the stars of a stroke behave: still stars, a flowing stream, a twisting ribbon
 // of silk, a comet that thickens towards its head, or a slow drifting mist.
 export const BRUSHES = ['stars', 'stream', 'ribbon', 'comet', 'mist'];
 function strokesOf(form) {
   if (!Array.isArray(form?.strokes)) return {};
-  const r = (v) => Math.round(clamp(v, -2.2, 2.2) * 1000) / 1000;
+  const r = (v) => Math.round(clamp(v, -STROKE_REACH, STROKE_REACH) * 1000) / 1000;
   const strokes = form.strokes.slice(0, MAX_STROKES).map((st) => {
     const pts = (Array.isArray(st?.pts) ? st.pts : []).slice(0, MAX_STROKE_POINTS)
       .filter((p) => Array.isArray(p) && p.length === 3 && p.every((v) => typeof v === 'number' && isFinite(v))).map((p) => p.map(r));
