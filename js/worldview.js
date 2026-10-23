@@ -641,7 +641,7 @@ export class WorldView {
     if (this.preview) this.form.rotation.y = 0;
     else if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
     this.focusFrame(dt);
-    this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1, all: this.preview, come: 0.1 }); // the studio shows everything as it is
+    this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1, all: this.preview, inside: true }); // you have come into this world: it all shows (the studio at once, a visit piece by piece)
     this.updateMarker();
     const e = this.engine;
     const tmp = new THREE.Vector3();

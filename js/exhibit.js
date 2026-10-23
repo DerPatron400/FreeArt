@@ -275,6 +275,7 @@ function videoPiece(m, size, ink) {
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
+const STAGGER = 0.28; // seconds between one piece starting to load and the next
 const breathe = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 300 }) : setTimeout(r, 60)));
 function inTurn(load) {
   const go = turn.then(breathe).then(load);
@@ -728,7 +729,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
   });
   const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
   const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
-  let revealed = false;
+  let revealed = false, nextLoad = 0;
   // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
   const haze = pieces.some((p) => p.piece.lazy) ? createHaze(roomBox.min, roomBox.max) : null;
   if (haze) group.add(onLayer(haze));
@@ -814,18 +815,20 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false } = {}) {
+    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside } = {}) {
       const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
       // At the plot (at: chosen, or the visitor stands by it), or the eye close to it from
       // whichever side: the haze lifts and every piece shows as it is. Stepping well back
       // again, the pieces go back into the haze.
-      let close = at;
-      if (camera) {
+      // In the city the plot opens only to someone inside it (inside: true or false).
+      let close = at || !!inside;
+      if (camera && inside === undefined) {
         const d = roomBox.distanceToPoint(group.worldToLocal(eye.copy(camera.position)));
         if (d < reveal) close = true;
         else if (d < reveal * 1.7 && revealed) close = true;
       }
       revealed = close;
+      const want = [];
       for (const p of pieces) {
         const h = p.holder;
         // How much of the view the piece fills (films play once it is large enough).
@@ -837,9 +840,11 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         // Only at the plot (revealed): from any further it is its light in the haze. A piece
         // with no glow yet (from a world saved before glows) loads from much further, as it
         // used to, and leaves its glow behind for the rest of the visit.
-        const early = !lazy?.drawn && inView > (come ? 0.02 : 0.05);
-        if (lazy && wake && (all || p.held || revealed || early)) lazy.load();
-        else if (lazy?.loaded && lazy.drawn && !all && !p.held && !revealed) lazy.unload();
+        // In the city nothing loads from outside, glow or not.
+        const early = inside === undefined && !lazy?.drawn && inView > (come ? 0.02 : 0.05);
+        if (lazy && p.held) lazy.load(); // looked at closely: at once
+        else if (lazy && wake && (all || revealed || early)) want.push(p);
+        else if (lazy?.loaded && (lazy.drawn || inside !== undefined) && !all && !p.held && !revealed) lazy.unload();
         if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
@@ -881,6 +886,13 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         }
         h.rotation.y = ry;
         p.piece.update?.(t, dt, { camera, audible, presence, near: revealed ? Math.max(p.nearView, 0.25) : p.nearView });
+      }
+      // The pieces come one after another, nearest first, each fading in on its own: never
+      // a crowd of loads starting in the same frame.
+      if (want.length) {
+        for (const p of want) if (p.piece.lazy.loaded) p.piece.lazy.load(); // keep what is already coming
+        const next = want.filter((p) => !p.piece.lazy.loaded).sort((a, b) => b.nearView - a.nearView)[0];
+        if (next && (all || t >= nextLoad)) { next.piece.lazy.load(); nextLoad = t + STAGGER; }
       }
       if (!haze) return;
       const u = haze.material.uniforms;

@@ -530,7 +530,11 @@ export class City {
     for (const it of this.items) {
       const u = it.form.userData.uniforms;
       u.uTime.value = t;
-      u.uReveal.value = Math.max(u.uReveal.value, reveal);
+      // A plot's particles stand only inside it: they gather as you step in (with the
+      // portal) and scatter away again once you have left.
+      it.gather = Math.max(0, Math.min(1, (it.gather || 0) + (it.inside ? dt / 2.6 : -dt / 0.8)));
+      u.uReveal.value = it.gather;
+      it.form.visible = !it.world.form.hidden && it.gather > 0.001;
       // Once gathered, worlds outside the view are skipped by the graphics card.
       if (reveal >= 1 && !it.culled) {
         it.culled = true;
@@ -549,15 +553,19 @@ export class City {
       if (!far) {
         // Presence: how close a visitor is. Some exhibitions only gather when someone comes.
         let presence = this.selected === it.plot ? 1 : 0;
-        // At the plot: you chose it, or you stand by it (from whichever side), so it shows as it is.
-        let at = this.selected === it.plot;
+        // Inside: only once you have stepped through the plot's glass walls does it open, and
+        // a portal plays; it closes again when you have walked a little way back out.
+        let inside = false;
         if (this.active && this.mode !== 'map') {
-          const d = Math.hypot(this.walker.pos.x - it.anchor.position.x, this.walker.pos.z - it.anchor.position.z);
+          const w = this.walker.pos;
+          const d = Math.hypot(w.x - it.anchor.position.x, w.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
-          const out = Math.hypot(Math.max(0, Math.abs(this.walker.pos.x - it.plot.cx) - it.plot.w / 2), Math.max(0, Math.abs(this.walker.pos.z - it.plot.cz) - it.plot.d / 2));
-          at = at || out < STREET;
-        }
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, at });
+          const out = Math.hypot(Math.max(0, Math.abs(w.x - it.plot.cx) - it.plot.w / 2), Math.max(0, Math.abs(w.z - it.plot.cz) - it.plot.d / 2), Math.max(0, w.y - it.plot.h));
+          inside = out === 0 || (!!it.inside && out < 1.5);
+          if (inside && it.inside === false) e.portal?.open(); // stepped in (not arriving already inside)
+          it.inside = inside;
+        } else it.inside = undefined;
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside });
       }
 
       if (it.label.hidden) continue;
