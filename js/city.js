@@ -444,17 +444,23 @@ export class City {
       e.camera.position.copy(c).add(new THREE.Vector3(0, from.h * 0.6, 3));
       e.controls.target.copy(c).setY(from.h * 0.5);
     } else if (!fromWorld) {
-      e.camera.position.set(0, 82, 58);
       e.controls.target.set(0, 0, 0);
-      // Arriving: first the whole city from high above, every plot glowing in its colours,
-      // drifting slowly round for a while, so the place and its beauty can be taken in;
-      // then down to a wide view of the streets (not yet close to anything).
+      // Arriving: the whole city straight from above, every plot glowing in its colours, then
+      // one unbroken descent that turns as it tilts and lands on a wide view of the streets.
+      // The fog stays thin up high, so the city can be seen whole, and thickens on the way down.
       if (!focus && this.mode !== 'map') {
-        const a = 0.32;
-        await e.flyTo(new THREE.Vector3(Math.sin(a) * 60, 74, Math.cos(a) * 60), new THREE.Vector3(0, 0, 0), 6.5);
-        if (!this.active) return;
         w.dist = 11; w.pitch = 0.62;
+        e.camera.position.set(0, EXTENT * 2.2, 0.01);
+        this.fogScale = 0.2;
+        const look = w.pos.clone().add(new THREE.Vector3(0, 0.8, 0));
+        await e.flyTo(w.cameraGoal(new THREE.Vector3()), look, 4.2, { arc: true, turn: Math.PI / 2, onStep: (k) => { this.fogScale = 0.2 + 0.8 * k; } });
+        this.fogScale = 1;
+        if (!this.active) return;
+        if (this.mode === 'tour') this.mode = 'walk';
+        this.setMode(this.mode);
+        return;
       }
+      e.camera.position.set(0, 82, 58);
     }
     const goal = w.cameraGoal(new THREE.Vector3());
     await e.flyTo(this.mode === 'map' ? new THREE.Vector3(0, 19, 27).add(w.pos) : goal, w.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), fromWorld ? 2.2 : 4.6);
@@ -595,7 +601,7 @@ export class City {
     this.ocean.visible = away < 0.99;
     for (const l of this.streetLines) l.material.opacity = l.userData.opacity * (1 - away);
     for (const v of this.visitors.list) v.mesh.visible = away < 0.5;
-    if (this.engine.scene.fog) this.engine.scene.fog.density = 0.016 - 0.011 * away;
+    if (this.engine.scene.fog) this.engine.scene.fog.density = (0.016 - 0.011 * away) * (this.fogScale ?? 1); // fogScale: thinner while arriving from above
     // Standing on a plot opens its panel; walking off closes it (in the hall, you stand in it).
     if (this.active && this.mode === 'walk' && !e.flight && !this.hall.it) {
       const here = plotAt(this.walker.pos.x, this.walker.pos.z);

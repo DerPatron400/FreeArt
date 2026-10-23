@@ -116,13 +116,24 @@ export class Engine {
     }
   }
 
-  flyTo(position, target, duration = 2.4) {
+  // arc: instead of a straight line, swing round the target, the distance, the tilt and the
+  // heading each easing from where the camera is to where it goes (turn adds extra heading,
+  // in radians, so the view visibly turns on the way). onStep(k) hears the eased progress.
+  flyTo(position, target, duration = 2.4, { arc = false, turn = 0, onStep = null } = {}) {
     return new Promise((resolve) => {
-      this.flight = {
+      const f = {
         from: this.camera.position.clone(), to: position.clone(),
         fromT: this.controls.target.clone(), toT: target.clone(),
-        t: 0, duration, resolve,
+        t: 0, duration, resolve, onStep,
       };
+      if (arc) {
+        const a = new THREE.Spherical().setFromVector3(f.from.clone().sub(f.fromT));
+        const b = new THREE.Spherical().setFromVector3(f.to.clone().sub(f.toT));
+        let dTheta = b.theta - a.theta;
+        dTheta = Math.atan2(Math.sin(dTheta), Math.cos(dTheta)) + turn;
+        f.arc = { a, b, dTheta, s: new THREE.Spherical(), off: new THREE.Vector3() };
+      }
+      this.flight = f;
       this.controls.enabled = false;
     });
   }
@@ -165,8 +176,16 @@ export class Engine {
         const f = this.flight;
         f.t = Math.min(1, f.t + dt / f.duration);
         const k = easeInOutCubic(f.t);
-        this.camera.position.lerpVectors(f.from, f.to, k);
         this.controls.target.lerpVectors(f.fromT, f.toT, k);
+        if (f.arc) {
+          const { a, b, s, off } = f.arc;
+          // Distance shrinks evenly in scale; the tilt comes on later, so it starts straight down.
+          s.radius = a.radius * Math.pow(b.radius / a.radius, k);
+          s.phi = a.phi + (b.phi - a.phi) * (k * k * (3 - 2 * k));
+          s.theta = b.theta - f.arc.dTheta * (1 - k);
+          this.camera.position.copy(this.controls.target).add(off.setFromSpherical(s));
+        } else this.camera.position.lerpVectors(f.from, f.to, k);
+        f.onStep?.(k);
         if (f.t >= 1) { this.flight = null; this.controls.enabled = true; f.resolve(); }
       }
       for (const u of this.updaters) u(t, dt);
