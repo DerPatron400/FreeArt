@@ -7,6 +7,7 @@ import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createOcean } from './ocean.js';
 import { createExhibit, exhibitTop } from './exhibit.js';
+import { createDoorway, DOOR_RADIUS } from './portal.js';
 import { t } from './i18n.js';
 
 // Physical key (layout and shift independent) so keydown and keyup always match.
@@ -184,6 +185,10 @@ export class City {
     // The city stands on dark water that mirrors it, softly; above is only black.
     this.ocean = createOcean(this.engine.renderer);
     this.group.add(this.ocean);
+    // The doorway that opens in a plot's glass wall as you walk up to it (see door()).
+    this.doorway = createDoorway();
+    this.doorway.group.traverse((o) => o.layers.set(1)); // drawn after the bloom: a line of light, never a glow
+    this.group.add(this.doorway.group);
 
     // Invisible volumes for picking.
     this.pickMesh = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({ visible: false }), PLOTS.length);
@@ -493,6 +498,45 @@ export class City {
     e.camera.position.add(move);
   }
 
+  // The doorway follows you along the wall of the plot you are nearest, at the point of
+  // the wall closest to you, and opens the closer you come (from outside or from within).
+  door(t, dt) {
+    const w = this.walker.pos, at = new THREE.Vector3(), facing = new THREE.Vector3();
+    let best = null, bestD = Infinity;
+    if (this.active && this.mode === 'walk') {
+      for (const it of this.items) {
+        const p = it.plot;
+        if (w.y > p.h + 0.5) continue;
+        const dx = Math.abs(w.x - p.cx) - p.w / 2, dz = Math.abs(w.z - p.cz) - p.d / 2;
+        const out = dx > 0 || dz > 0;
+        const dist = out ? Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) : -Math.max(dx, dz);
+        if (dist < bestD) { bestD = dist; best = { it, onX: out ? dx > dz : dx > dz }; }
+      }
+    }
+    let open = 0, wall = null, height = 1;
+    if (best && bestD < 3.2) {
+      const p = best.it.plot, R = Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
+      height = R / DOOR_RADIUS;
+      const y = Math.min(Math.max(w.y, R * 1.05), p.h - R * 1.05);
+      if (best.onX) {
+        const sx = Math.sign(w.x - p.cx) || 1;
+        at.set(p.cx + sx * p.w / 2, y, Math.min(Math.max(w.z, p.cz - p.d / 2 + R), p.cz + p.d / 2 - R));
+        facing.set(sx, 0, 0);
+      } else {
+        const sz = Math.sign(w.z - p.cz) || 1;
+        at.set(Math.min(Math.max(w.x, p.cx - p.w / 2 + R), p.cx + p.w / 2 - R), y, p.cz + sz * p.d / 2);
+        facing.set(0, 0, sz);
+      }
+      // From outside it opens over the last few steps; inside, only right by the wall (just
+      // come in, or about to leave), so it closes behind you as you walk on.
+      open = bestD >= 0 ? 1 - Math.min(1, Math.max(0, (bestD - 0.4) / 2.8)) : 1 - Math.min(1, Math.max(0, (-bestD - 0.3) / 1.2));
+      open = open * open * (3 - 2 * open);
+      wall = p.cx + ',' + p.cz + (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz);
+    }
+    this.doorway.setViewport(window.innerHeight, this.engine.renderer.getPixelRatio());
+    this.doorway.update(t, dt, { at: wall ? at : null, facing, wall, open, height });
+  }
+
   update(t, dt) {
     if (!this.group.visible) return;
     this.laneUniforms.uTime.value = t;
@@ -525,6 +569,7 @@ export class City {
 
     this.you.position.set(e.controls.target.x, 0.4 + 0.1 * Math.sin(t * 2), e.controls.target.z);
     this.visitors.update(t, dt);
+    this.door(t, dt);
 
     const reveal = Math.min(1, (performance.now() - this.revealStart) / 4000);
     for (const it of this.items) {
@@ -553,8 +598,8 @@ export class City {
       if (!far) {
         // Presence: how close a visitor is. Some exhibitions only gather when someone comes.
         let presence = this.selected === it.plot ? 1 : 0;
-        // Inside: only once you have stepped through the plot's glass walls does it open, and
-        // a portal plays; it closes again when you have walked a little way back out.
+        // Inside: only once you have stepped through the plot's glass walls does it open (through
+        // the doorway that forms as you come, see door()); it closes when you are a little way out.
         let inside = false;
         if (this.active && this.mode !== 'map') {
           const w = this.walker.pos;
@@ -562,7 +607,6 @@ export class City {
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
           const out = Math.hypot(Math.max(0, Math.abs(w.x - it.plot.cx) - it.plot.w / 2), Math.max(0, Math.abs(w.z - it.plot.cz) - it.plot.d / 2), Math.max(0, w.y - it.plot.h));
           inside = out === 0 || (!!it.inside && out < 1.5);
-          if (inside && it.inside === false) e.portal?.open(); // stepped in (not arriving already inside)
           it.inside = inside;
         } else it.inside = undefined;
         it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside });

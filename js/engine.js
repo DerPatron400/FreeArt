@@ -6,7 +6,6 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Pass } from 'three/addons/postprocessing/Pass.js';
-import { PortalPass } from './portal.js';
 
 // Draws layer 1 (blobs, built lines, exhibits) after the bloom, into the same
 // buffer and against the same depth, so it is crisp, never glows, and still
@@ -55,8 +54,6 @@ export class Engine {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.75, 0.7, 0.12);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new LayerPass(this.scene, this.camera));
-    this.portal = new PortalPass(); // plays when you step into a plot (portal.open())
-    this.composer.addPass(this.portal);
     this.composer.addPass(new OutputPass());
 
     this.pointer = new THREE.Vector2(-10, -10);

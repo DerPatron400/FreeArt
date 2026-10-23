@@ -275,6 +275,8 @@ function videoPiece(m, size, ink) {
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
+// An ink colour (#rrggbb) as light for the haze, in linear light.
+const inkTint = (hex) => [1, 3, 5].map((i) => Math.pow(parseInt(hex.slice(i, i + 2), 16) / 255, 2.2));
 const STAGGER = 0.28; // seconds between one piece starting to load and the next
 const breathe = () => new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(() => r(), { timeout: 300 }) : setTimeout(r, 60)));
 function inTurn(load) {
@@ -725,13 +727,16 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     group.add(onLayer(holder));
     // Every piece keeps its own clock and smoothed sense of a visitor nearby;
     // seeds come from its place in the list, so the motion is the same for everyone.
-    pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0 });
+    // A piece that needs no loading (words, drawings, melodies...) still stands in the haze
+    // from outside, in the world's own ink, and grows into place once you are inside.
+    const tint = piece.lazy ? null : inkTint(ink[index % 3]);
+    pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0, tint, show: 1 });
   });
   const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
   const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
   let revealed = false, nextLoad = 0;
   // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
-  const haze = pieces.some((p) => p.piece.lazy) ? createHaze(roomBox.min, roomBox.max) : null;
+  const haze = pieces.length ? createHaze(roomBox.min, roomBox.max) : null;
   if (haze) group.add(onLayer(haze));
   // Where each piece stands and how it moves: read again whenever the maker moves it,
   // without rebuilding (and so without reloading) anything.
@@ -868,6 +873,13 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         }
         // 'appear': not there from afar; grows and brightens as you come close.
         if (p.nearMode === 'appear') { k *= Math.max(0.001, near); p.piece.setOpacity?.(near); }
+        // In the city, a piece without loading grows in after you have come inside, in turn.
+        if (p.tint) {
+          p.show = inside === undefined ? 1 : Math.max(0, Math.min(1, p.show + (revealed && t >= (p.due ??= t + p.index * STAGGER) ? dt / 0.9 : -dt / 0.6)));
+          if (!revealed) p.due = undefined;
+          k *= Math.max(0.001, ease(p.show));
+          h.visible = p.show > 0.001;
+        }
         h.scale.setScalar(k);
         // Facing: a set turn, slowly sway or spin around it, or (unset) face whoever looks.
         let ry;
@@ -899,10 +911,12 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       let n = 0;
       for (const p of pieces) {
         if (n >= HAZE_MAX) break;
-        const tint = p.piece.tint, w = p.piece.haze;
+        const tint = p.tint || p.piece.tint, w = p.tint ? 0.7 * (1 - p.show) : p.piece.haze;
         if (!tint || w < 0.01) continue;
-        const r = Math.max(U * 0.08, p.size0 * p.holder.scale.x * 0.75);
-        u.uP.value[n].set(p.holder.position.x, p.holder.position.y, p.holder.position.z, r);
+        const r = Math.max(U * 0.08, p.size0 * (p.scale || 1) * 0.75);
+        // Each light drifts slowly about where its piece stands, so the haze is never still.
+        const q = p.holder.position, s = r * 0.35, c = t * 0.18 + p.seed * 2.1;
+        u.uP.value[n].set(q.x + Math.sin(c) * s, q.y + Math.sin(c * 0.77 + 1.3) * s * 0.6, q.z + Math.cos(c * 0.91) * s, r);
         u.uC.value[n].set(tint[0], tint[1], tint[2], w);
         n++;
       }
