@@ -179,25 +179,30 @@ export class Walker {
         row([key('E')], t('move.enter')),
       );
     }
-    // Folding the card away sits at the end of its last row; folded, the title alone opens it.
+    // The fold button sits in the bottom right corner in both states and only turns: open,
+    // it ends the last row; folded, it ends the title's row. The card is anchored at its foot,
+    // so it grows upward and the title rides up with it; the rows then come in one by one.
     const toggle = el('button', 'move-help__toggle');
     toggle.type = 'button';
-    const icon = Object.assign(document.createElement('img'), { src: 'img/collapse.svg', width: 28, height: 28, alt: '' });
-    toggle.append(icon);
-    body.lastElementChild.append(toggle);
+    toggle.append(Object.assign(document.createElement('img'), { src: 'img/collapse.svg', width: 28, height: 28, alt: '' }));
     const title = el('button', 'move-help__title', t('move.title'));
     title.type = 'button';
+    [...body.children].forEach((r, i) => r.style.setProperty('--i', i));
+    const fold = el('div', 'move-help__fold');
+    fold.append(body);
     const set = (open) => {
       help.classList.toggle('is-open', open);
-      toggle.setAttribute('aria-label', t('move.hide'));
+      toggle.setAttribute('aria-label', open ? t('move.hide') : t('move.title'));
+      toggle.setAttribute('aria-expanded', String(open));
       title.setAttribute('aria-expanded', String(open));
       try { localStorage.setItem('freeart.help', open ? '1' : '0'); } catch {}
     };
-    toggle.addEventListener('click', () => set(false));
-    title.addEventListener('click', () => set(!help.classList.contains('is-open')));
+    const flip = () => set(!help.classList.contains('is-open'));
+    toggle.addEventListener('click', flip);
+    title.addEventListener('click', flip);
     let open = true;
     try { open = localStorage.getItem('freeart.help') !== '0'; } catch {}
-    help.append(title, body);
+    help.append(title, fold, toggle);
     set(open);
     help.hidden = true;
     this.help = help;

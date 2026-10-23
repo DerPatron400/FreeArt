@@ -132,23 +132,29 @@ button { font: inherit; color: inherit; }
 .modes button.is-active { background: var(--paper); color: #000; opacity: 1; }
 /* Movement help belongs to the city only, never over a world, the studio or the manifesto. */
 body:not([data-view="city"]) .move-help, body:not([data-view="city"]) .move-pad, .is-manifesto .move-help, .is-manifesto .move-pad { display: none !important; }
+/* How to move: anchored at its foot, so it unfolds upward; the rows come in one after another. */
 .move-help {
-  position: fixed; left: 32px; bottom: 33px; z-index: 6; width: 295px; box-sizing: border-box; padding: 20px 24px 24px;
-  display: flex; flex-direction: column; gap: 24px; border-radius: 6px; background: var(--panel);
+  position: fixed; left: 32px; bottom: 32px; z-index: 6; width: 295px; box-sizing: border-box; padding: 12px 16px 16px;
+  display: flex; flex-direction: column; gap: 16px; border-radius: 6px; background: var(--panel);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper);
+  transition: padding-top 0.5s var(--ease), gap 0.5s var(--ease);
 }
-.move-help__title { margin: 0; padding: 0; background: none; border: 0; color: var(--paper); text-align: left; cursor: pointer; font: 300 22px/normal var(--serif); }
-.move-help__body { display: flex; flex-direction: column; gap: 12px; font-family: var(--mono); font-size: 13px; font-weight: 300; letter-spacing: 0.26px; text-transform: uppercase; line-height: 15px; }
-.move-help__row { display: flex; align-items: center; gap: 8px; min-height: 28px; }
+.move-help__title { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; color: var(--paper); text-align: left; cursor: pointer; font: 300 22px/normal var(--serif); white-space: nowrap; }
+/* The rows' height opens and closes smoothly: a one-row grid going from 0fr to 1fr. */
+.move-help__fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.5s var(--ease); }
+.move-help__body { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; font-family: var(--mono); font-size: 13px; font-weight: 300; letter-spacing: 0.26px; text-transform: uppercase; line-height: 15px; }
+.move-help__row { display: flex; align-items: center; gap: 8px; min-height: 28px; flex: none;
+  transition: opacity 0.4s var(--ease), transform 0.5s var(--ease); transition-delay: calc(0.15s + var(--i, 0) * 0.1s); }
 .move-help__row span { opacity: 0.5; white-space: nowrap; }
 .move-help__row b { font-weight: 300; white-space: nowrap; }
 .move-help kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 28px; height: 28px; padding: 0 8px; border: 1px solid var(--faint); border-bottom-width: 2px; border-radius: 4px; font: inherit; color: var(--paper); }
-.move-help__row:has(kbd + kbd) { gap: 8px; }
-.move-help__toggle { margin-left: auto; padding: 0; background: none; border: 0; cursor: pointer; line-height: 0; }
-.move-help__toggle img { display: block; width: 28px; height: 28px; }
-.move-help:not(.is-open) { width: auto; padding: 14px 20px; gap: 0; }
-.move-help:not(.is-open) .move-help__body { display: none; }
-.move-help:not(.is-open) .move-help__title { font-size: 18px; }
+.move-help__toggle { position: absolute; right: 16px; bottom: 16px; padding: 0; background: none; border: 0; cursor: pointer; line-height: 0; }
+.move-help__toggle img { display: block; width: 28px; height: 28px; transform: rotate(90deg); transition: transform 0.5s var(--ease); } /* folded: pointing up */
+.move-help.is-open .move-help__toggle img { transform: rotate(-90deg); } /* open: pointing down */
+/* Folded: just the title's row, 16px all round; the rows leave quickly, then the card closes. */
+.move-help:not(.is-open) { padding-top: 16px; gap: 0; }
+.move-help:not(.is-open) .move-help__fold { grid-template-rows: 0fr; transition-delay: 0.15s; }
+.move-help:not(.is-open) .move-help__row { opacity: 0; transform: translateY(8px); transition-duration: 0.2s; transition-delay: 0s; }
 .move-pad { position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6; display: grid; gap: 14px; }
 .move-pad button { width: 58px; height: 58px; border-radius: 6px; border: 0; background: var(--panel-2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper); font-size: 20px; touch-action: none; -webkit-user-select: none; user-select: none; }
 .move-pad button:active { background: rgba(232, 235, 255, 0.18); }
