@@ -531,10 +531,21 @@ body.is-focus .labels *, body.is-focus .world-info *, body.is-focus .story *, bo
 .hall-leave { position: fixed; right: 32px; bottom: 76px; z-index: 7; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 1s var(--ease), transform 1s var(--ease); }
 .hall-leave.is-on { opacity: 1; pointer-events: auto; transform: none; }
 body.in-hall .hint { opacity: 0; transition: opacity 0.8s var(--ease); }
+.hall-nav { position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 6px); z-index: 7; display: flex; align-items: center; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 1s var(--ease), transform 1s var(--ease); }
+.hall-nav.is-on { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.hall-nav__arrow { width: 40px; height: 40px; border-radius: 50%; border: 1px solid var(--faint); background: rgba(11, 10, 9, 0.5); color: var(--paper); font-size: 22px; line-height: 1; cursor: pointer; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: border-color 0.3s; }
+.hall-nav__arrow:hover { border-color: var(--paper); }
+.hall-nav__count { min-width: 64px; text-align: center; color: var(--muted); }
+.hall-nav__join { display: none; }
+.hall-nav.can-join .hall-nav__join { display: inline-block; animation: rise 0.6s var(--ease) both; }
+.hall-nav.can-join .hall-nav__count { display: none; }
 @media (pointer: coarse), (max-aspect-ratio: 1/1) {
   /* On a phone the thumbs are below: the words stand above them. */
   .hall-caption { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 168px); }
   .hall-hint { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 128px); }
   .hall-leave { right: 50%; bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 72px); transform: translate(50%, -6px); }
   .hall-leave.is-on { transform: translate(50%, 0); }
+  /* Above the thumbs' controls. */
+  .hall-nav { bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); }
+  .hall-nav__arrow { width: 46px; height: 46px; }
 }

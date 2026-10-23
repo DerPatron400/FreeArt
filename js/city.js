@@ -576,6 +576,8 @@ export class City {
     this.laneUniforms.uFade.value = 1 - away;
     for (const it of this.items) if (it !== this.hall.it) it.anchor.visible = away < 0.5;
     this.labelsRoot.style.opacity = String(1 - away);
+    this.labelsRoot.style.visibility = away > 0.95 ? 'hidden' : ''; // nor can their names be clicked
+    if (away > 0.5) this.labelHover = null;
     // No ground, no water, no streets, no one else: a black void with only the plot's pieces.
     this.ocean.userData.uniforms.uFade.value = 1 - away;
     this.ocean.visible = away < 0.99;
@@ -592,8 +594,9 @@ export class City {
       }
     }
 
-    let hovered = this.labelHover || null;
-    if (this.active && !e.flight && !hovered) {
+    // Inside a world (the hall), the city outside is not there to point at.
+    let hovered = this.hall.it ? null : this.labelHover || null;
+    if (this.active && !e.flight && !hovered && !this.hall.it) {
       const hit = e.pick([this.pickMesh]);
       hovered = hit ? PLOTS[hit.instanceId] : null;
     }
