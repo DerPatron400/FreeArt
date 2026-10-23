@@ -22,3 +22,5 @@
 
 /vendor/*
   Cache-Control: public, max-age=31536000, immutable
+/audio/*
+  Cache-Control: public, max-age=604800

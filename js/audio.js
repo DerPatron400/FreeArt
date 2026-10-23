@@ -1,15 +1,10 @@
-// A quiet generative drone per world, plus a chime when a fragment opens.
-const MOODS = {
-  warm: [1, 1.5, 2, 3],
-  bright: [1, 1.5, 2.25, 3, 4],
-  dark: [1, 1.2, 1.5, 2],
-};
+// The Khora ambience under the city and every world, plus a chime when a fragment opens.
+const AMBIENCE = 'audio/khora-ambience.mp3';
 
 export class Sound {
   constructor() {
     this.ctx = null;
     this.enabled = false;
-    this.voices = [];
     this.world = null;
   }
 
@@ -29,16 +24,26 @@ export class Sound {
       this.bus.connect(this.reverb);
       this.reverb.connect(wet).connect(this.master);
       this.master.connect(this.ctx.destination);
+      // The recording plays straight to the master (no added reverb), looping; it is only
+      // fetched once someone turns the sound on.
+      this.track = Object.assign(new Audio(AMBIENCE), { loop: true, preload: 'auto' });
+      this.ctx.createMediaElementSource(this.track).connect(this.master);
     }
     this.ctx.resume();
     this.enabled = true;
+    this.track.play().catch(() => {});
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime);
     this.master.gain.setTargetAtTime(0.5, this.ctx.currentTime, 1.2);
-    this.setWorld(this.world, true);
   }
 
   disable() {
     this.enabled = false;
-    if (this.ctx) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    if (!this.ctx) return;
+    this.master.gain.cancelScheduledValues(this.ctx.currentTime);
+    this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.4);
+    // Paused once faded, so a muted tab is not still decoding the track.
+    clearTimeout(this.pausing);
+    this.pausing = setTimeout(() => { if (!this.enabled) this.track.pause(); }, 2000);
   }
 
   toggle() {
@@ -56,49 +61,9 @@ export class Sound {
     return buf;
   }
 
-  // world === null plays the city: a low open fifth.
-  setWorld(world, force = false) {
-    const key = world ? `${world.sound.root}:${world.sound.mood}` : 'city';
-    if (!force && key === this.key) { this.world = world; return; }
+  // The ambience is the same everywhere; a world only tunes its chimes (null: the city).
+  setWorld(world) {
     this.world = world;
-    this.key = key;
-    if (!this.enabled || !this.ctx) return;
-    const now = this.ctx.currentTime;
-    for (const v of this.voices) {
-      v.gain.gain.cancelScheduledValues(now);
-      v.gain.gain.setTargetAtTime(0, now, 0.9);
-      v.oscs.forEach((o) => o.stop(now + 5));
-    }
-    const root = world ? world.sound.root : 55;
-    const ratios = world ? MOODS[world.sound.mood] : [1, 1.5, 2];
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = root * 6;
-    filter.Q.value = 0.7;
-    const lfo = this.ctx.createOscillator();
-    const lfoGain = this.ctx.createGain();
-    lfo.frequency.value = 0.05 + Math.random() * 0.05;
-    lfoGain.gain.value = root * 3;
-    lfo.connect(lfoGain).connect(filter.frequency);
-    const gain = this.ctx.createGain();
-    gain.gain.value = 0;
-    filter.connect(gain).connect(this.bus);
-    const oscs = [lfo];
-    ratios.forEach((r, i) => {
-      for (const detune of [-5, 6]) {
-        const o = this.ctx.createOscillator();
-        o.type = i === 0 ? 'sine' : 'triangle';
-        o.frequency.value = root * r;
-        o.detune.value = detune + (Math.random() - 0.5) * 4;
-        const g = this.ctx.createGain();
-        g.gain.value = 0.11 / (i + 1);
-        o.connect(g).connect(filter);
-        oscs.push(o);
-      }
-    });
-    oscs.forEach((o) => o.start(now));
-    gain.gain.setTargetAtTime(1, now + 0.3, 1.8);
-    this.voices = [{ gain, oscs }];
   }
 
   chime(i = 0) {

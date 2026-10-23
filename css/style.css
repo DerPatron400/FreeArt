@@ -75,17 +75,17 @@ button { font: inherit; color: inherit; }
 .wordmark { display: block; text-decoration: none; }
 .nav { display: flex; gap: 32px; align-items: center; height: 32px; }
 .nav > a:not(.btn), .lang, .sound-toggle { text-decoration: none; color: var(--paper); opacity: 0.5; transition: opacity 0.3s; }
-.nav > a:not(.btn):hover, .nav > a.is-active:not(.btn), .lang:hover, .sound-toggle:hover, .sound-on .sound-toggle { opacity: 1; }
+.nav > a:not(.btn):hover, .nav > a.is-active:not(.btn), .lang:hover, .sound-toggle:hover { opacity: 1; }
 .nav__claim.is-active { background: #5468ec; }
 .lang { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
 .lang img { display: block; width: 8px; height: 4px; pointer-events: none; }
 .sound-toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; cursor: pointer; padding: 0; color: var(--paper); }
 .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 13px; padding: 2px; box-sizing: border-box; }
-.bars i { width: 1px; background: var(--paper); transition: height 0.3s; }
-.bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 6px; } .bars i:nth-child(3) { height: 10px; } .bars i:nth-child(4) { height: 8px; } .bars i:nth-child(5) { height: 2px; }
+.bars i { width: 1px; height: 2px; background: var(--paper); transform-origin: 50% 100%; transition: height 0.4s var(--ease); } /* off: five flat bars */
+.sound-on .bars i:nth-child(1) { height: 4px; } .sound-on .bars i:nth-child(2) { height: 6px; } .sound-on .bars i:nth-child(3) { height: 10px; } .sound-on .bars i:nth-child(4) { height: 8px; } .sound-on .bars i:nth-child(5) { height: 2px; }
 .sound-on .bars i { animation: bar 1.1s ease-in-out infinite alternate; }
 .sound-on .bars i:nth-child(2) { animation-delay: -0.3s; } .sound-on .bars i:nth-child(3) { animation-delay: -0.6s; } .sound-on .bars i:nth-child(4) { animation-delay: -0.9s; } .sound-on .bars i:nth-child(5) { animation-delay: -0.45s; }
-@keyframes bar { from { height: 2px; } to { height: 9px; } }
+@keyframes bar { from { transform: scaleY(0.55); } to { transform: scaleY(1); } }
 
 /* Projected labels */
 .labels { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
