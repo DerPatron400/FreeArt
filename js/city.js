@@ -2,7 +2,7 @@
 // plot and stands in it; empty plots wait for a maker, human or machine.
 import * as THREE from 'three';
 import { createForm, disposeForm } from './form.js';
-import { el, lerp, clamp, rng } from './util.js';
+import { roman, el, lerp, clamp, rng } from './util.js';
 import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createOcean } from './ocean.js';
@@ -349,7 +349,7 @@ export class City {
       const label = el('button', 'label');
       const by = el('span', 'label__by mono');
       by.append(el('span', null, world.creator.name), Object.assign(document.createElement('img'), { src: 'img/dot.svg', width: 2, height: 2, alt: '' }), el('span', null, NATURE[world.creator.nature]));
-      label.append(el('span', 'label__num mono', t('plot.n', { n: p.n })), el('span', 'label__title', world.title), by);
+      label.append(el('span', 'label__num mono', t('plot.n', { n: roman(p.n) })), el('span', 'label__title', world.title), by);
       label.addEventListener('click', () => this.select(p));
       label.addEventListener('dblclick', () => this.enter(it));
       label.addEventListener('pointerenter', () => { this.labelHover = p; });

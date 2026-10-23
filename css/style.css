@@ -79,11 +79,12 @@ button { font: inherit; color: inherit; }
 /* Chrome */
 .chrome {
   position: fixed; top: 0; left: 0; right: 0; z-index: 10; display: flex; justify-content: space-between; align-items: flex-start;
-  padding: 32px; pointer-events: none; animation: rise 1.6s var(--ease) both;
+  padding: 32px; pointer-events: none; animation: rise 1.6s var(--ease) backwards; /* not 'both': a held transform would cut the menu's blur off from the city behind */
 }
 .chrome > * { pointer-events: auto; }
 .wordmark { display: block; text-decoration: none; }
-.nav { display: flex; gap: 32px; align-items: center; height: 32px; }
+.nav { display: flex; gap: 32px; align-items: center; height: 40px; }
+.nav__claim { height: 40px; padding: 0 16px; white-space: nowrap; }
 .nav > a:not(.btn), .lang__toggle, .sound-toggle { text-decoration: none; color: var(--paper); opacity: 0.5; transition: opacity 0.3s; }
 .nav > a:not(.btn):hover, .nav > a.is-active:not(.btn), .lang__toggle:hover, .lang.is-open .lang__toggle, .sound-toggle:hover { opacity: 1; }
 .nav__claim.is-active { background: #5468ec; }
@@ -91,12 +92,18 @@ button { font: inherit; color: inherit; }
 .lang__toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; cursor: pointer; }
 .lang__toggle img { display: block; width: 8px; height: 4px; pointer-events: none; transition: transform 0.3s var(--ease); }
 .lang.is-open .lang__toggle img { transform: rotate(180deg); }
-/* The menu hangs under the code, centred on it, from the foot of the nav row. */
+/* The menu hangs under the code, centred on it, from the foot of the nav row. It unrolls
+   downward and the codes drop in one after another; closing, they leave together and it rolls up. */
 .lang__menu {
-  position: absolute; top: calc(100% + 8.5px); left: 50%; transform: translateX(-50%); margin: 0; padding: 16px 20px; list-style: none;
+  position: absolute; top: calc(100% + 12.5px); left: 50%; transform: translateX(-50%); margin: 0; padding: 16px 20px; list-style: none;
   display: flex; flex-direction: column; align-items: center; gap: 24px; border-radius: 4px;
   background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  clip-path: inset(0 0 100% 0 round 4px); visibility: hidden;
+  transition: clip-path 0.35s var(--ease) 0.1s, visibility 0s linear 0.45s;
 }
+.lang.is-open .lang__menu { clip-path: inset(0 0 0 0 round 4px); visibility: visible; transition: clip-path 0.5s var(--ease), visibility 0s; }
+.lang__menu li { opacity: 0; transform: translateY(-6px); transition: opacity 0.15s var(--ease), transform 0.3s var(--ease); }
+.lang.is-open .lang__menu li { opacity: 1; transform: none; transition: opacity 0.35s var(--ease), transform 0.45s var(--ease); transition-delay: calc(0.08s + var(--i, 0) * 0.05s); }
 .lang__menu button { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; color: var(--paper); cursor: pointer; opacity: 0.5; transition: opacity 0.3s; }
 .lang__menu button:hover, .lang__menu button:focus-visible, .lang__menu [aria-selected="true"] button { opacity: 1; }
 .lang__menu img { display: block; width: 3px; height: 3px; }
@@ -134,10 +141,10 @@ button { font: inherit; color: inherit; }
 body:not([data-view="city"]) .move-help, body:not([data-view="city"]) .move-pad, .is-manifesto .move-help, .is-manifesto .move-pad { display: none !important; }
 /* How to move: anchored at its foot, so it unfolds upward; the rows come in one after another. */
 .move-help {
-  position: fixed; left: 32px; bottom: 32px; z-index: 6; width: 295px; box-sizing: border-box; padding: 12px 16px 16px;
+  position: fixed; left: 32px; bottom: 32px; z-index: 6; width: 295px; box-sizing: border-box; padding: 16px 20px 20px;
   display: flex; flex-direction: column; gap: 16px; border-radius: 6px; background: var(--panel);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper);
-  transition: padding-top 0.5s var(--ease), gap 0.5s var(--ease);
+  transition: padding-bottom 0.5s var(--ease), gap 0.5s var(--ease);
 }
 .move-help__title { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; color: var(--paper); text-align: left; cursor: pointer; font: 300 22px/normal var(--serif); white-space: nowrap; }
 /* The rows' height opens and closes smoothly: a one-row grid going from 0fr to 1fr. */
@@ -148,11 +155,12 @@ body:not([data-view="city"]) .move-help, body:not([data-view="city"]) .move-pad,
 .move-help__row span { opacity: 0.5; white-space: nowrap; }
 .move-help__row b { font-weight: 300; white-space: nowrap; }
 .move-help kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 28px; height: 28px; padding: 0 8px; border: 1px solid var(--faint); border-bottom-width: 2px; border-radius: 4px; font: inherit; color: var(--paper); }
-.move-help__toggle { position: absolute; right: 16px; bottom: 16px; padding: 0; background: none; border: 0; cursor: pointer; line-height: 0; }
+.move-help__toggle { position: absolute; right: 20px; bottom: 20px; transition: bottom 0.5s var(--ease); padding: 0; background: none; border: 0; cursor: pointer; line-height: 0; }
 .move-help__toggle img { display: block; width: 28px; height: 28px; transform: rotate(90deg); transition: transform 0.5s var(--ease); } /* folded: pointing up */
 .move-help.is-open .move-help__toggle img { transform: rotate(-90deg); } /* open: pointing down */
-/* Folded: just the title's row, 16px all round; the rows leave quickly, then the card closes. */
-.move-help:not(.is-open) { padding-top: 16px; gap: 0; }
+/* Folded: just the title's row (16 above and below, 20 at the sides); the rows leave quickly, then the card closes. */
+.move-help:not(.is-open) { padding-bottom: 16px; gap: 0; }
+.move-help:not(.is-open) .move-help__toggle { bottom: 16.5px; }
 .move-help:not(.is-open) .move-help__fold { grid-template-rows: 0fr; transition-delay: 0.15s; }
 .move-help:not(.is-open) .move-help__row { opacity: 0; transform: translateY(8px); transition-duration: 0.2s; transition-delay: 0s; }
 .move-pad { position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6; display: grid; gap: 14px; }
@@ -195,21 +203,35 @@ body:has(#story:not([hidden])) .hint { visibility: hidden; }
 .world-info__edit { color: var(--muted); text-decoration: none; }
 .world-info__edit:hover { color: var(--paper); }
 
-/* Fragment panel */
+/* Fragment and plot panels (the Figma "Overlays"): 370 wide, 20 in, the lot and close on top. */
 .fragment {
-  position: fixed; right: 32px; top: 50%; z-index: 9; width: min(400px, calc(100vw - 64px));
-  transform: translateY(-50%); padding: 24px; background: var(--panel); border-radius: 6px;
+  position: fixed; right: 32px; top: 50%; z-index: 9; width: min(370px, calc(100vw - 64px)); box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 20px;
+  transform: translateY(-50%); padding: 20px; background: var(--panel); border-radius: 6px;
   backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); animation: slide 0.9s var(--ease) both;
 }
 .fragment { max-height: calc(100vh - 140px); overflow-y: auto; }
 @keyframes slide { from { opacity: 0; transform: translate(24px, -50%); } to { opacity: 1; transform: translate(0, -50%); } }
-.fragment__close { position: absolute; top: 14px; right: 16px; background: none; border: 0; cursor: pointer; color: var(--muted); }
-.fragment__index { color: var(--muted); margin: 0 0 10px; }
-.fragment__title { font-weight: 300;  font-size: 34px; line-height: 1.05; margin: 0 0 16px; }
-.fragment__text { font-size: 19px; line-height: 1.55; margin: 0 0 18px; white-space: pre-line; color: rgba(232, 235, 255, 0.88); }
+.fragment__top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.fragment__index, .plot__meta { display: flex; align-items: center; gap: 8px; margin: 0; padding-left: 2px; font-size: 11px; letter-spacing: 0.22px; line-height: 13px; color: #f8f9ff; }
+.fragment__index { opacity: 0.5; }
+.plot__meta span { opacity: 0.5; }
+.fragment__index img, .plot__meta img { display: block; width: 2px; height: 2px; }
+.fragment__close { display: inline-flex; align-items: center; gap: 6px; flex: none; padding: 0; background: none; border: 0; cursor: pointer; color: #f8f9ff; font-size: 11px; letter-spacing: 0.22px; line-height: 13px; opacity: 0.5; transition: opacity 0.3s; }
+.fragment__close:hover { opacity: 1; }
+.fragment__close img { display: block; width: 6.7px; height: 6.7px; }
+.story .fragment__close { position: absolute; }
+.fragment__title { margin: 0; font: 300 32px/1 var(--serif); color: var(--paper); }
+.fragment__text { margin: 0; font: 300 20px/1.3 var(--serif); white-space: pre-line; color: var(--paper); }
 .fragment__link { color: var(--muted); text-decoration: none; }
-.plot__meta { color: var(--muted); margin: -8px 0 14px; }
-.plot__actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.plot__intro { display: flex; flex-direction: column; gap: 16px; }
+.plot__head { display: flex; flex-direction: column; gap: 12px; }
+.plot.is-free .plot__head { gap: 4px; }
+.plot.is-free .fragment__title { line-height: normal; }
+.plot__actions { display: flex; gap: 12px; }
+.plot__actions .btn { flex: 1 1 0; min-width: 0; height: 40px; padding: 9px 12px 10px; }
+.plot__actions .btn--ghost { background: rgba(248, 249, 255, 0.1); color: rgba(248, 249, 255, 0.7); }
+.plot__actions .btn--ghost:hover { background: rgba(248, 249, 255, 0.16); color: #f8f9ff; }
 .is-manifesto .plot { visibility: hidden; }
 
 /* Manifesto */

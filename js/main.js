@@ -32,16 +32,19 @@ startScramble(); // the mono texts type themselves in, and again on hover
     if (l.code === lang) b.append(Object.assign(document.createElement('img'), { src: 'img/lang-dot.svg', width: 3, height: 3, alt: '' }));
     b.addEventListener('click', () => { open(false); if (l.code !== lang) setLang(l.code); });
     item.append(b);
+    item.style.setProperty('--i', menu.children.length);
     menu.append(item);
   }
   const open = (on) => {
-    menu.hidden = !on;
     box.classList.toggle('is-open', on);
+    menu.inert = !on; // closed, it stays in place for its animation but cannot be reached
     toggle.setAttribute('aria-expanded', String(on));
   };
-  toggle.addEventListener('click', () => open(menu.hidden));
-  document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !box.contains(e.target)) open(false); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { open(false); toggle.focus(); } });
+  const isOpen = () => box.classList.contains('is-open');
+  toggle.addEventListener('click', () => open(!isOpen()));
+  open(false);
+  document.addEventListener('pointerdown', (e) => { if (isOpen() && !box.contains(e.target)) open(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isOpen()) { open(false); toggle.focus(); } });
 }
 
 const engine = new Engine($('stage'));
@@ -158,18 +161,21 @@ function showPlot(p, world) {
   plotShown = p;
   plotPanel.hidden = !p;
   if (!p) return;
-  $('pl-index').textContent = `${t('plot.n', { n: roman(p.n) })} · ${t(p.x >= 0 ? 'dir.e' : 'dir.w')}${Math.abs(p.x)} ${t(p.z >= 0 ? 'dir.s' : 'dir.n')}${Math.abs(p.z)}`;
+  $('pl-lot').textContent = t('plot.n', { n: roman(p.n) });
+  $('pl-cell').textContent = `${t(p.x >= 0 ? 'dir.e' : 'dir.w')}${Math.abs(p.x)} ${t(p.z >= 0 ? 'dir.s' : 'dir.n')}${Math.abs(p.z)}`;
   const primary = $('pl-primary');
+  plotPanel.classList.toggle('is-free', !world);
+  $('pl-meta').hidden = !world; // a free lot has no maker to name
   if (world) {
     $('pl-title').textContent = world.title;
-    $('pl-meta').textContent = `${world.creator.name} · ${NATURE[world.creator.nature]}${world.sample ? ' · ' + t('world.sample') : ''}`;
+    $('pl-by').textContent = world.creator.name;
+    $('pl-nature').textContent = NATURE[world.creator.nature] + (world.sample ? ' · ' + t('world.sample') : '');
     $('pl-text').textContent = world.statement;
     primary.textContent = t('plot.enter');
     primary.href = '#/world/' + encodeURIComponent(world.id);
     $('pl-invite').hidden = true;
   } else {
     $('pl-title').textContent = t('plot.free');
-    $('pl-meta').textContent = t('plot.owner');
     $('pl-text').textContent = t('plot.text', { w: Math.round(p.w * 2), d: Math.round(p.d * 2), floors: p.floors });
     primary.textContent = t('plot.claim');
     primary.href = `#/create?plot=${p.x},${p.z}`;
