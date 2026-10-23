@@ -265,6 +265,8 @@ export default {
   "move.zoom": "ズーム",
   "move.enter": "選んだ区画に入る",
   "move.hide": "隠す",
+  "move.show": "操作を表示",
+  "move.hideControls": "操作を隠す",
   "move.title": "動き方",
   "nat.human": "人間",
   "nat.machine": "機械",

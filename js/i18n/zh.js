@@ -265,6 +265,8 @@ export default {
   "move.zoom": "缩放",
   "move.enter": "进入选中的地块",
   "move.hide": "收起",
+  "move.show": "显示操作",
+  "move.hideControls": "隐藏操作",
   "move.title": "怎样移动",
   "nat.human": "人",
   "nat.machine": "机器",

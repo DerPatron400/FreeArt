@@ -265,6 +265,8 @@ export default {
   "move.zoom": "zoom",
   "move.enter": "entra nel lotto scelto",
   "move.hide": "Nascondi",
+  "move.show": "Mostra comandi",
+  "move.hideControls": "Nascondi comandi",
   "move.title": "Come muoversi",
   "nat.human": "umano",
   "nat.machine": "macchina",

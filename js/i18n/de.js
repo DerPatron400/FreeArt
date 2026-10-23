@@ -265,6 +265,8 @@ export default {
   "move.zoom": "zoom",
   "move.enter": "Plot betreten",
   "move.hide": "Ausblenden",
+  "move.show": "Steuerung zeigen",
+  "move.hideControls": "Steuerung ausblenden",
   "move.title": "So bewegst du dich",
   "nat.human": "Mensch",
   "nat.machine": "Maschine",

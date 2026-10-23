@@ -133,36 +133,43 @@ button { font: inherit; color: inherit; }
 .label--fragment.is-open .label__title { color: var(--paper); }
 .label.is-behind { opacity: 0.25; }
 
-.modes { position: fixed; right: 32px; bottom: 32px; z-index: 6; display: flex; gap: 4px; padding: 5px; border-radius: 6px; background: var(--panel-2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.modes { position: fixed; right: 32px; bottom: 32px; z-index: 6; display: flex; align-items: center; gap: 4px; padding: 5px 6px; border-radius: 6px; background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 .modes button { background: none; border: 0; border-radius: 4px; padding: 7px 12px 8px; cursor: pointer; color: var(--paper); font: inherit; letter-spacing: inherit; text-transform: inherit; opacity: 0.5; transition: opacity 0.3s, background 0.3s, color 0.3s; }
 .modes button:hover { opacity: 1; }
-.modes button.is-active { background: var(--paper); color: #000; opacity: 1; }
+.modes button.is-active { background: var(--paper); color: #000; opacity: 1; padding: 6px 12px 7px; } /* the lit tab sits a touch smaller inside its frame */
 /* Movement help belongs to the city only, never over a world, the studio or the manifesto. */
 body:not([data-view="city"]) .move-help, body:not([data-view="city"]) .move-pad, .is-manifesto .move-help, .is-manifesto .move-pad { display: none !important; }
-/* How to move: anchored at its foot, so it unfolds upward; the rows come in one after another. */
+/* How to move: a bar at the foot ("show controls") that never moves; open, the card grows up
+   out of it, the title and rows rising in one after another, and the bar's words type over. */
 .move-help {
-  position: fixed; left: 32px; bottom: 32px; z-index: 6; width: 295px; box-sizing: border-box; padding: 16px 20px 20px;
-  display: flex; flex-direction: column; gap: 16px; border-radius: 6px; background: var(--panel);
+  --glide: cubic-bezier(0.76, 0, 0.24, 1);
+  position: fixed; left: 32px; bottom: 32px; z-index: 6; width: 262px; box-sizing: border-box; padding: 6px 6px 6px 18px;
+  display: flex; flex-direction: column; border-radius: 4px; background: var(--panel);
   backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper);
-  transition: padding-bottom 0.5s var(--ease), gap 0.5s var(--ease);
+  transition: width 0.6s var(--glide), padding 0.6s var(--glide);
 }
-.move-help__title { align-self: flex-start; margin: 0; padding: 0; background: none; border: 0; color: var(--paper); text-align: left; cursor: pointer; font: 300 22px/normal var(--serif); white-space: nowrap; }
-/* The rows' height opens and closes smoothly: a one-row grid going from 0fr to 1fr. */
-.move-help__fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows 0.5s var(--ease); }
-.move-help__body { min-height: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; font-family: var(--mono); font-size: 13px; font-weight: 300; letter-spacing: 0.26px; text-transform: uppercase; line-height: 15px; }
-.move-help__row { display: flex; align-items: center; gap: 8px; min-height: 28px; flex: none;
-  transition: opacity 0.4s var(--ease), transform 0.5s var(--ease); transition-delay: calc(0.15s + var(--i, 0) * 0.1s); }
+.move-help.is-open { width: 264px; padding: 16px 6px 6px 20px; }
+/* The height opens and closes smoothly: a one-row grid going from 0fr to 1fr. */
+.move-help__fold { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.6s var(--glide); }
+.move-help.is-open .move-help__fold { grid-template-rows: 1fr; }
+.move-help__inner { min-height: 0; overflow: hidden; }
+.move-help__content { display: flex; flex-direction: column; gap: 16px; padding-bottom: 32px; }
+.move-help__title { margin: 0; font: 300 20px/1 var(--serif); color: var(--paper); white-space: nowrap; }
+.move-help__body { display: flex; flex-direction: column; gap: 12px; font-family: var(--mono); font-size: 13px; font-weight: 300; letter-spacing: 0.26px; text-transform: uppercase; line-height: 15px; }
+.move-help__row { display: flex; align-items: center; gap: 8px; min-height: 28px; flex: none; }
 .move-help__row span { opacity: 0.5; white-space: nowrap; }
 .move-help__row b { font-weight: 300; white-space: nowrap; }
 .move-help kbd { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 28px; height: 28px; padding: 0 8px; border: 1px solid var(--faint); border-bottom-width: 2px; border-radius: 4px; font: inherit; color: var(--paper); }
-.move-help__toggle { position: absolute; right: 20px; bottom: 20px; transition: bottom 0.5s var(--ease); padding: 0; background: none; border: 0; cursor: pointer; line-height: 0; }
-.move-help__toggle img { display: block; width: 28px; height: 28px; transform: rotate(90deg); transition: transform 0.5s var(--ease); } /* folded: pointing up */
-.move-help.is-open .move-help__toggle img { transform: rotate(-90deg); } /* open: pointing down */
-/* Folded: just the title's row (16 above and below, 20 at the sides); the rows leave quickly, then the card closes. */
-.move-help:not(.is-open) { padding-bottom: 16px; gap: 0; }
-.move-help:not(.is-open) .move-help__toggle { bottom: 16.5px; }
-.move-help:not(.is-open) .move-help__fold { grid-template-rows: 0fr; transition-delay: 0.15s; }
-.move-help:not(.is-open) .move-help__row { opacity: 0; transform: translateY(8px); transition-duration: 0.2s; transition-delay: 0s; }
+/* Title and rows rise out of a soft blur, one after another as the card opens; they leave together, quickly. */
+.move-help__title, .move-help__row { opacity: 0; transform: translateY(8px); filter: blur(3px);
+  transition: opacity 0.18s ease, transform 0.25s ease, filter 0.18s ease; }
+.move-help.is-open .move-help__title, .move-help.is-open .move-help__row { opacity: 1; transform: none; filter: none;
+  transition: opacity 0.45s var(--ease), transform 0.6s var(--ease), filter 0.45s var(--ease); transition-delay: calc(0.2s + var(--i, 0) * 0.06s); }
+.move-help__bar { display: flex; align-items: center; justify-content: space-between; flex: none; width: 238px; height: 28px; padding: 0; background: none; border: 0; cursor: pointer; color: var(--paper); text-align: left; }
+.move-help__label { opacity: 0.5; transition: opacity 0.3s; white-space: nowrap; }
+.move-help__bar:hover .move-help__label, .move-help__bar:focus-visible .move-help__label { opacity: 1; }
+.move-help__bar img { display: block; width: 28px; height: 28px; transform: rotate(90deg); transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1); } /* folded: pointing up */
+.move-help.is-open .move-help__bar img { transform: rotate(-90deg); } /* open: pointing down */
 .move-pad { position: fixed; right: 16px; top: 50%; transform: translateY(-50%); z-index: 6; display: grid; gap: 14px; }
 .move-pad button { width: 58px; height: 58px; border-radius: 6px; border: 0; background: var(--panel-2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper); font-size: 20px; touch-action: none; -webkit-user-select: none; user-select: none; }
 .move-pad button:active { background: rgba(232, 235, 255, 0.18); }
@@ -395,7 +402,7 @@ output { color: var(--paper); }
   .nav { gap: 14px; }
   .nav a[data-nav="manifesto"] { display: none; }
   .hint { display: none; }
-  .move-help { left: 16px; right: auto; bottom: auto; top: 64px; font-size: 13px; max-width: 230px; padding: 12px 14px; }
+  .move-help { left: 16px; right: auto; bottom: auto; top: 64px; }
   .modes { right: 50%; transform: translateX(50%); bottom: 14px; }
   .world-info { left: 16px; right: 16px; bottom: 20px; }
   .world-info__statement { font-size: 16px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

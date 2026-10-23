@@ -179,30 +179,32 @@ export class Walker {
         row([key('E')], t('move.enter')),
       );
     }
-    // The fold button sits in the bottom right corner in both states and only turns: open,
-    // it ends the last row; folded, it ends the title's row. The card is anchored at its foot,
-    // so it grows upward and the title rides up with it; the rows then come in one by one.
-    const toggle = el('button', 'move-help__toggle');
-    toggle.type = 'button';
-    toggle.append(Object.assign(document.createElement('img'), { src: 'img/collapse.svg', width: 28, height: 28, alt: '' }));
-    const title = el('button', 'move-help__title', t('move.title'));
-    title.type = 'button';
-    [...body.children].forEach((r, i) => r.style.setProperty('--i', i));
+    // The bar at the foot stays where it is in both states: folded it is all there is, open
+    // the card grows up out of it (title and rows coming in one after another), the arrow
+    // turns, and its words type themselves over from "show" to "hide".
+    const label = el('span', 'move-help__label mono', t('move.show'));
+    const bar = el('button', 'move-help__bar');
+    bar.type = 'button';
+    bar.append(label, Object.assign(document.createElement('img'), { src: 'img/collapse.svg', width: 28, height: 28, alt: '' }));
+    const title = el('p', 'move-help__title', t('move.title'));
+    const content = el('div', 'move-help__content');
+    content.append(title, body);
+    const inner = el('div', 'move-help__inner'); // the part that folds away: no padding of its own, so it closes to nothing
+    inner.append(content);
+    [title, ...body.children].forEach((r, i) => r.style.setProperty('--i', i));
     const fold = el('div', 'move-help__fold');
-    fold.append(body);
+    fold.append(inner);
     const set = (open) => {
       help.classList.toggle('is-open', open);
-      toggle.setAttribute('aria-label', open ? t('move.hide') : t('move.title'));
-      toggle.setAttribute('aria-expanded', String(open));
-      title.setAttribute('aria-expanded', String(open));
+      label.textContent = open ? t('move.hideControls') : t('move.show');
+      bar.setAttribute('aria-expanded', String(open));
+      fold.inert = !open;
       try { localStorage.setItem('freeart.help', open ? '1' : '0'); } catch {}
     };
-    const flip = () => set(!help.classList.contains('is-open'));
-    toggle.addEventListener('click', flip);
-    title.addEventListener('click', flip);
+    bar.addEventListener('click', () => set(!help.classList.contains('is-open')));
     let open = true;
     try { open = localStorage.getItem('freeart.help') !== '0'; } catch {}
-    help.append(title, fold, toggle);
+    help.append(fold, bar);
     set(open);
     help.hidden = true;
     this.help = help;

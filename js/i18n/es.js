@@ -265,6 +265,8 @@ export default {
   "move.zoom": "acercar",
   "move.enter": "entrar en el solar elegido",
   "move.hide": "Ocultar",
+  "move.show": "Mostrar controles",
+  "move.hideControls": "Ocultar controles",
   "move.title": "Cómo moverte",
   "nat.human": "persona",
   "nat.machine": "máquina",

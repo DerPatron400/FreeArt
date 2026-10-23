@@ -265,6 +265,8 @@ export default {
   "move.zoom": "приблизить",
   "move.enter": "войти на выбранный участок",
   "move.hide": "Скрыть",
+  "move.show": "Показать управление",
+  "move.hideControls": "Скрыть управление",
   "move.title": "Как двигаться",
   "nat.human": "человек",
   "nat.machine": "машина",

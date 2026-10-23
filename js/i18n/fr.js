@@ -265,6 +265,8 @@ export default {
   "move.zoom": "zoomer",
   "move.enter": "entrer dans la parcelle choisie",
   "move.hide": "Masquer",
+  "move.show": "Afficher les commandes",
+  "move.hideControls": "Masquer les commandes",
   "move.title": "Se déplacer",
   "nat.human": "humain",
   "nat.machine": "machine",

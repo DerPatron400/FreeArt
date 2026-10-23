@@ -265,6 +265,8 @@ export default {
   "move.zoom": "zoom",
   "move.enter": "enter plot",
   "move.hide": "Hide",
+  "move.show": "Show controls",
+  "move.hideControls": "Hide controls",
   "move.title": "How to move",
   "nat.human": "human",
   "nat.machine": "machine",
