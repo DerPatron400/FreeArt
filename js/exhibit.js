@@ -275,6 +275,11 @@ function videoPiece(m, size, ink) {
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
+// A colour as light for the haze: never too dark to be seen, a little richer than it is.
+function vivid([r, g, b]) {
+  const l = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = l < 0.22 ? 0.22 / Math.max(l, 0.01) : 1;
+  return [r, g, b].map((v) => Math.max(0, l * k + (v * k - l * k) * 1.3));
+}
 // An ink colour (#rrggbb) as light for the haze, in linear light.
 const inkTint = (hex) => [1, 3, 5].map((i) => Math.pow(parseInt(hex.slice(i, i + 2), 16) / 255, 2.2));
 const STAGGER = 0.28; // seconds between one piece starting to load and the next
@@ -728,15 +733,20 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     // Every piece keeps its own clock and smoothed sense of a visitor nearby;
     // seeds come from its place in the list, so the motion is the same for everyone.
     // A piece that needs no loading (words, drawings, melodies...) still stands in the haze
-    // from outside, in the world's own ink, and grows into place once you are inside.
-    const tint = piece.lazy ? null : inkTint(ink[index % 3]);
+    // from outside, in the world's own colours, and grows into place once you are inside.
+    const tint = piece.lazy ? null : inkTint(world.palette?.[[1, 0, 2][index % 3]] || ink[index % 3]); // the accent first, then the deep colour, then the light
     pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0, tint, show: 1 });
   });
   const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
   const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
-  let revealed = false, nextLoad = 0;
+  let revealed = false, nextLoad = 0, ambient = 1;
+  const sz = roomBox.getSize(new THREE.Vector3()), palReach = Math.max(sz.x, sz.y, sz.z) * 0.32;
+  const palLights = (world.palette || []).slice(0, 3).map((hex, i) => {
+    const at = [[-0.28, 0.22, 0.2], [0.3, 0.55, -0.22], [-0.05, 0.85, 0.05]][i];
+    return [at[0] * sz.x, at[1] * sz.y, at[2] * sz.z, vivid(inkTint(hex))];
+  });
   // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
-  const haze = pieces.length ? createHaze(roomBox.min, roomBox.max) : null;
+  const haze = pieces.length || world.palette?.length ? createHaze(roomBox.min, roomBox.max) : null;
   if (haze) group.add(onLayer(haze));
   // Where each piece stands and how it moves: read again whenever the maker moves it,
   // without rebuilding (and so without reloading) anything.
@@ -911,16 +921,25 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       let n = 0;
       for (const p of pieces) {
         if (n >= HAZE_MAX) break;
-        const tint = p.tint || p.piece.tint, w = p.tint ? 0.7 * (1 - p.show) : p.piece.haze;
+        const tint = p.tint || p.piece.tint, w = p.tint ? 1 - p.show : p.piece.haze;
         if (!tint || w < 0.01) continue;
-        const r = Math.max(U * 0.08, p.size0 * (p.scale || 1) * 0.75);
-        // Each light drifts slowly about where its piece stands, so the haze is never still.
-        const q = p.holder.position, s = r * 0.35, c = t * 0.18 + p.seed * 2.1;
-        u.uP.value[n].set(q.x + Math.sin(c) * s, q.y + Math.sin(c * 0.77 + 1.3) * s * 0.6, q.z + Math.cos(c * 0.91) * s, r);
-        u.uC.value[n].set(tint[0], tint[1], tint[2], w);
+        // Bigger pieces reach further into the plot's colour.
+        const r = Math.max(U * 0.12, p.size0 * (p.scale || 1) * 0.9), c = vivid(tint);
+        const q = p.holder.position;
+        u.uP.value[n].set(q.x, q.y, q.z, r);
+        u.uC.value[n].set(c[0], c[1], c[2], w);
         n++;
       }
+      // The world's own colours stand in the plot too, spread through it, so the whole box is
+      // filled and a plot with few pieces still has all its colours.
+      ambient += ((revealed ? 0 : 1) - ambient) * Math.min(1, dt * (revealed ? 1.5 : 0.8));
+      if (ambient > 0.01) for (let i = 0; i < palLights.length && n < HAZE_MAX; i++, n++) {
+        const [x, y, z, c] = palLights[i];
+        u.uP.value[n].set(x, y, z, palReach);
+        u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8);
+      }
       u.uCount.value = n;
+      u.uTime.value = t;
       haze.visible = n > 0;
     },
     dispose() {

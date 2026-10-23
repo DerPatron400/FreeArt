@@ -36,10 +36,11 @@ export function glowTint(o) {
 
 // ---- the haze over a plot ----
 
-// From afar a plot is one soft cloud of light inside its own lines: every piece that is
-// not up close adds a blur of its colour where it stands, and they run into each other.
-// Each view ray is followed through the plot's box and the light of every piece summed
-// along it (a gaussian, integrated exactly), so it is smooth from every side and cheap.
+// From afar a plot is filled, wall to wall, with one soft field of light made of the
+// colours of everything placed in it: every point of the box takes the colours of the
+// pieces around it, nearer ones more, so they blend across the whole plot, and the field
+// drifts slowly. Each view ray is followed through the box in a few steps and the light
+// along it gathered; it is smooth from every side and cheap.
 export const HAZE_MAX = 16;
 
 const HAZE_VERT = /* glsl */`
@@ -50,29 +51,54 @@ const HAZE_FRAG = /* glsl */`
 uniform vec3 uMin;
 uniform vec3 uMax;
 uniform vec3 uEye;
+uniform float uTime;
 uniform int uCount;
 uniform vec4 uP[${16}];
 uniform vec4 uC[${16}];
 varying vec3 vLocal;
-float erf1(float x) { float t = x * x; return sign(x) * sqrt(1.0 - exp(-t * (1.2732 + 0.147 * t) / (1.0 + 0.147 * t))); }
+float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float noise(vec3 p) {
+  vec3 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), u.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), u.x), u.y),
+             mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), u.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), u.x), u.y), u.z);
+}
 void main() {
   vec3 ro = uEye, rd = normalize(vLocal - uEye);
   vec3 inv = 1.0 / rd, t0 = (uMin - ro) * inv, t1 = (uMax - ro) * inv;
   vec3 lo = min(t0, t1), hi = max(t0, t1);
   float tn = max(max(lo.x, lo.y), max(lo.z, 0.0)), tf = min(min(hi.x, hi.y), hi.z);
   if (tf <= tn) discard;
-  vec3 col = vec3(0.0);
-  for (int i = 0; i < ${16}; i++) {
-    if (i >= uCount) break;
-    vec3 q = uP[i].xyz - ro;
-    float r = uP[i].w, c = dot(q, rd), b = dot(q, q) - c * c;
-    float along = erf1((tf - c) / r) - erf1((tn - c) / r);
-    // A piece you stand right by gives way, so its light never fills the whole view.
-    float by = smoothstep(r * 1.2, r * 4.0, length(q));
-    col += uC[i].rgb * uC[i].a * by * exp(-b / (r * r)) * 0.886 * along;
+  vec3 size = uMax - uMin;
+  float scale = max(size.x, max(size.y, size.z));
+  const int STEPS = 10;
+  float dt = (tf - tn) / float(STEPS);
+  vec3 acc = vec3(0.0);
+  for (int s = 0; s < STEPS; s++) {
+    vec3 x = ro + rd * (tn + (float(s) + 0.5) * dt);
+    // The drift: the place a colour is looked up at wanders slowly.
+    vec3 q = x / scale * 2.2;
+    vec3 wander = vec3(noise(q + vec3(0.0, uTime * 0.05, 0.0)), noise(q + vec3(5.2, -uTime * 0.04, 1.3)), noise(q + vec3(2.7, 0.0, uTime * 0.045))) - 0.5;
+    vec3 y = x + wander * scale * 0.35;
+    vec3 col = vec3(0.0);
+    float wsum = 0.0, lit = 0.0;
+    for (int i = 0; i < ${16}; i++) {
+      if (i >= uCount) break;
+      vec3 d = y - uP[i].xyz;
+      float r = uP[i].w;
+      float k = r * r / (dot(d, d) + r * r * 0.35); // near pieces weigh more, far ones still a little
+      k *= k;
+      col += uC[i].rgb * k;
+      lit += uC[i].a * k;
+      wsum += k;
+    }
+    col /= max(wsum, 1e-5);
+    float strength = lit / max(wsum, 1e-5);
+    // A faint, slow breathing in how much light there is, and softness toward the floor.
+    float breath = 0.75 + 0.5 * noise(q * 1.7 + vec3(uTime * 0.06));
+    acc += col * strength * breath * dt;
   }
-  col = 0.42 * (1.0 - exp(-col * 0.7)); // never a white glare, however much gathers
-  gl_FragColor = vec4(col, 1.0);
+  vec3 c = 0.5 * (1.0 - exp(-acc * 0.55 / scale * 3.0)); // never a white glare, however much gathers
+  gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
@@ -80,7 +106,7 @@ void main() {
 // The haze for a box from min to max (in the space of whatever it is added to).
 export function createHaze(min, max) {
   const uniforms = {
-    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uCount: { value: 0 },
+    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uTime: { value: 0 }, uCount: { value: 0 },
     uP: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
     uC: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
   };

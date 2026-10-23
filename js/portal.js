@@ -25,7 +25,7 @@ void main() {
 // Adapted from the showcase portal: the same outline, draw-on, glitter and grain,
 // without its colours, its glow or the world behind it.
 const FRAG = /* glsl */`
-uniform float uTime, uRadius, uArc, uGlow;
+uniform float uTime, uRadius, uArc, uGlow, uHalf;
 varying vec2 vLocal;
 ${NOISE}
 void main() {
@@ -33,7 +33,9 @@ void main() {
   vec2 circ = vec2(cos(ang), sin(ang));
   float n1 = fbm(circ * 1.25 + vec2(uTime * 0.13, -uTime * 0.09));
   float n2 = noise(circ * 3.4 + vec2(-uTime * 0.6, uTime * 0.45));
-  float d = len - R * (1.0 + 0.30 * (n1 - 0.5) + 0.08 * (n2 - 0.5)); // < 0 inside
+  // While small it stays round; the unevenness grows as it opens.
+  float wob = smoothstep(0.25, 0.9, R);
+  float d = len - R * (1.0 + wob * (0.30 * (n1 - 0.5) + 0.08 * (n2 - 0.5))); // < 0 inside
   float inside = 1.0 - smoothstep(-R * 0.03, fwidth(len) * 1.5, d);
   float a01 = fract(0.25 - ang / 6.28318);
   float arc = uArc >= 0.999 ? 1.0 : 1.0 - smoothstep(uArc - 0.002, uArc + 0.02, a01);
@@ -48,9 +50,11 @@ void main() {
   float h = hash(vec2(mod(floor(g.x), 150.0), floor(g.y)));
   float glitter = smoothstep(0.42, 0.0, length(fract(g) - 0.5)) * pow(0.5 + 0.5 * sin(uTime * (6.0 + h * 10.0) + h * 40.0), 6.0)
                 * exp(-abs(d) / (0.2 * R)) * step(0.82, h);
-  float seed = (1.0 - smoothstep(0.1, 0.35, R)) * exp(-len / (R * 0.7)) * (0.6 + 0.4 * sin(ang * 3.0 - uTime * 4.0 + len / R * 6.0));
+  float seed = (1.0 - smoothstep(0.1, 0.35, R)) * exp(-len / (R * 0.5)) * 0.8;
   float lit = uGlow * arc;
   float a = clamp((rim * 1.2 + speck * 0.9 + glitter * 1.2) * lit + (seed + head * 1.6 * exp(-abs(d) / (rimW * 3.0))) * uGlow, 0.0, 1.0);
+  // Nothing may reach the edge of the square it is drawn on.
+  a *= 1.0 - smoothstep(0.7, 0.97, max(abs(vLocal.x), abs(vLocal.y)) / uHalf);
   gl_FragColor = vec4(vec3(0.96, 0.94, 0.9) * a, a);
 }`;
 
@@ -134,7 +138,7 @@ export function createDoorway() {
       uniforms.uRadius.value = radius;
       uniforms.uArc.value = arc;
       uniforms.uGlow.value = glow;
-      uniforms.uHalf.value = Math.max(radius * 1.8, 0.3);
+      uniforms.uHalf.value = Math.max(radius * 2.2, 0.45);
       mesh.position.copy(centre);
       mesh.rotation.set(0, Math.atan2(normal.x, normal.z), 0);
       carry += (open > 0.02 ? 20 + open * 160 : 0) * glow * dt;
