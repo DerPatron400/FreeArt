@@ -363,12 +363,13 @@ function route() {
 function cityHint() {
   const touch = matchMedia('(pointer: coarse)').matches;
   const census = t('hint.census', { n: city.items.length, total: city.items.length + city.freeCount() });
+  // Walking, the card says how to move, so the line below is just the census.
   const hints = {
-    walk: touch ? t('hint.walkTouch') : t('hint.walk'),
+    walk: touch ? t('hint.walkTouch') : '',
     map: touch ? t('hint.mapTouch') : t('hint.map'),
     tour: t('hint.tour'),
   };
-  setHint(`${hints[city.mode]} · ${census}`);
+  setHint(hints[city.mode] ? `${hints[city.mode]} · ${census}` : census);
   document.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('is-active', b.dataset.mode === city.mode));
 }
 

@@ -200,10 +200,10 @@ export class City {
     // Hover and selection outlines.
     const edge = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
     edge.translate(0, 0.5, 0);
-    this.hoverBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0xece4d4, transparent: true, opacity: 0.9 }));
-    this.selectBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0xc9a46a, transparent: true, opacity: 1 }));
+    this.hoverBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0xe8ebff, transparent: true, opacity: 0.9 }));
+    this.selectBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 1 }));
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0xc9a46a, transparent: true, opacity: 0.06, depthWrite: false }));
+      new THREE.MeshBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 0.06, depthWrite: false }));
     floor.position.y = 0.005;
     this.selectBox.add(floor);
     this.hoverBox.visible = this.selectBox.visible = false;

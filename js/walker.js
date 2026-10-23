@@ -174,22 +174,30 @@ export class Walker {
         row(t('key.wasd').split(' ').map(key), t('move.wasd')),
         row([key(t('key.space'))], t('move.up')),
         row([key(t('key.shift'))], t('move.down')),
-        row([el('b', null, t('move.drag'))], t('move.look')),
         row([el('b', null, t('move.scroll'))], t('move.zoom')),
+        row([el('b', null, t('move.drag'))], t('move.look')),
         row([key('E')], t('move.enter')),
       );
     }
+    // Folding the card away sits at the end of its last row; folded, the title alone opens it.
     const toggle = el('button', 'move-help__toggle');
     toggle.type = 'button';
+    const icon = Object.assign(document.createElement('img'), { src: 'img/collapse.svg', width: 28, height: 28, alt: '' });
+    toggle.append(icon);
+    body.lastElementChild.append(toggle);
+    const title = el('button', 'move-help__title', t('move.title'));
+    title.type = 'button';
     const set = (open) => {
       help.classList.toggle('is-open', open);
-      toggle.textContent = open ? t('move.hide') : t('move.title');
+      toggle.setAttribute('aria-label', t('move.hide'));
+      title.setAttribute('aria-expanded', String(open));
       try { localStorage.setItem('freeart.help', open ? '1' : '0'); } catch {}
     };
-    toggle.addEventListener('click', () => set(!help.classList.contains('is-open')));
+    toggle.addEventListener('click', () => set(false));
+    title.addEventListener('click', () => set(!help.classList.contains('is-open')));
     let open = true;
     try { open = localStorage.getItem('freeart.help') !== '0'; } catch {}
-    help.append(el('p', 'move-help__title mono', t('move.title')), body, toggle);
+    help.append(title, body);
     set(open);
     help.hidden = true;
     this.help = help;
