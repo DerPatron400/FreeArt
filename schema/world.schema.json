@@ -194,6 +194,11 @@
                 "kind"
               ],
               "properties": {
+                "outline": {
+                  "type": "object",
+                  "description": "Made by the site, not by hand: the white-line drawing that stands for a file piece until a visitor comes close. t is 'l' (line segments) or 'p' (points); d is base64 of signed bytes, x y z per point, in units of the piece's size.",
+                  "properties": { "t": { "enum": ["l", "p"] }, "d": { "type": "string", "maxLength": 20000 } }
+                },
                 "kind": {
                   "enum": [
                     "image",

@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { createBuild } from './build.js';
 import { SHOWABLE, inkColors, embedFor, constellationLayout, melodyFreq, ctx, pluck } from './media.js';
+import { outlineObject, knownOutline, keepOutline, traceImage, traceModel, traceSplat } from './outline.js';
 
 const PAPER = '#ece4d4';
 const FONT = '"Cormorant Garamond", Georgia, serif';
@@ -85,19 +86,21 @@ function fit(t) {
 
 // Pictures load only when someone comes near (like models), so a city full of
 // worlds does not fetch and decode every picture at once.
-function imagePiece(src, size, ink) {
-  const proxy = frameLines(size, size * 0.75, ink[1], 0.4);
-  return lazyPiece(size, () => new Promise((resolve, reject) => {
+function imagePiece(m, size, ink) {
+  const src = m.src;
+  return lazyPiece(size, (learn) => new Promise((resolve, reject) => {
     new THREE.TextureLoader().load(src, (t) => {
       t = fit(t);
       t.colorSpace = THREE.SRGBColorSpace;
       const k = t.image.height / t.image.width;
       const w = k > 1 ? size / k : size, h = w * k;
+      learn?.(traceImage(t.image, w / size, h / size));
       const g = new THREE.Group();
-      g.add(plane(t, w, h, 0.92), frameLines(w * 1.04, h * 1.04, ink[1], 0.35));
-      resolve({ object: g, free() { freeObject(g); t.dispose(); } });
+      const pic = plane(t, w, h, 0.92), frame = frameLines(w * 1.04, h * 1.04, ink[1], 0.35);
+      g.add(pic, frame);
+      resolve({ object: g, setOpacity(a) { pic.material.opacity = 0.92 * a; frame.material.opacity = 0.35 * a; }, free() { freeObject(g); t.dispose(); } });
     }, undefined, reject);
-  }), { proxy, solid: false, what: 'picture' });
+  }), { src, outline: m.outline, solid: false, what: 'picture' });
 }
 
 function sketchPiece(sketch, size, ink) {
@@ -199,26 +202,38 @@ function audioPiece(size, ink) {
 }
 
 // Films too: the video (and its decoder) exists only while someone is near.
-function videoPiece(src, size, ink) {
+function videoPiece(m, size, ink) {
+  const src = m.src;
   const embed = embedFor(src);
   const h = size * 9 / 16;
-  const proxy = frameLines(size * 1.04, h * 1.04, ink[1], 0.35);
   const file = !embed && (/\.(mp4|webm|mov)(\?|$)/i.test(src) || src.startsWith('data:video/'));
   const id = embed?.url.match(/youtube-nocookie\.com\/embed\/([\w-]+)/)?.[1];
-  const piece = lazyPiece(size, () => new Promise((resolve, reject) => {
+  return lazyPiece(size, (learn) => new Promise((resolve) => {
     const g = new THREE.Group();
-    g.add(frameLines(size * 1.04, h * 1.04, ink[1], 0.35));
+    const mats = [];
+    const frame = frameLines(size * 1.04, h * 1.04, ink[1], 0.35);
+    g.add(frame);
+    const fades = (list) => (a) => list.forEach(([mat, o]) => { mat.opacity = o * a; });
     if (file) {
-      // Until someone stands close it shows its first frame and fetches little more; then it plays.
+      // A first frame and a little of the film; it buffers as you come nearer and plays up close.
       const v = Object.assign(document.createElement('video'), { src: src.startsWith('data:') ? src : src + '#t=0.1', muted: true, loop: true, playsInline: true, crossOrigin: 'anonymous', preload: 'metadata' });
       const t = new THREE.VideoTexture(v);
       t.colorSpace = THREE.SRGBColorSpace;
-      g.add(plane(t, size, h, 0.92));
+      const pic = plane(t, size, h, 0.92);
+      g.add(pic);
+      // Without a drawing yet: trace about the thirtieth frame (a second in), past any fade from black.
+      if (learn) {
+        const tracer = Object.assign(document.createElement('video'), { src, muted: true, playsInline: true, crossOrigin: 'anonymous', preload: 'auto' });
+        tracer.addEventListener('loadedmetadata', () => { tracer.currentTime = Math.min(1, (tracer.duration || 2) * 0.25); }, { once: true });
+        tracer.addEventListener('seeked', () => { learn(traceImage(tracer, 1, 9 / 16)); tracer.removeAttribute('src'); tracer.load(); }, { once: true });
+      }
       return resolve({
         object: g,
-        update(dt, { presence = 1 } = {}) {
-          if (presence > 0.5 && v.paused && !v.ended) v.play().catch(() => {});
-          else if (presence < 0.3 && !v.paused) v.pause();
+        setOpacity: fades([[pic.material, 0.92], [frame.material, 0.35]]),
+        update(dt, { near = 1 } = {}) {
+          if (near > 0.1 && v.preload !== 'auto') v.preload = 'auto';
+          if (near > 0.2 && v.paused && !v.ended) v.play().catch(() => {});
+          else if (near < 0.12 && !v.paused) v.pause();
         },
         // A paused video still holds its decoder and buffers; letting go of the source frees them.
         free() { v.pause(); v.removeAttribute('src'); v.load(); freeObject(g); t.dispose(); },
@@ -226,16 +241,22 @@ function videoPiece(src, size, ink) {
     }
     // A play mark, drawn in lines, over the film's still where there is one.
     const s = size * 0.08;
-    g.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([
+    const tri = new THREE.Line(new THREE.BufferGeometry().setFromPoints([
       new THREE.Vector3(-s * 0.6, -s, 0.01), new THREE.Vector3(s, 0, 0.01), new THREE.Vector3(-s * 0.6, s, 0.01), new THREE.Vector3(-s * 0.6, -s, 0.01),
-    ]), new THREE.LineBasicMaterial({ color: ink[2], transparent: true, opacity: 0.9, depthWrite: false })));
-    const done = () => resolve({ object: g, free() { freeObject(g); } });
+    ]), new THREE.LineBasicMaterial({ color: ink[2], transparent: true, opacity: 0.9, depthWrite: false }));
+    g.add(tri);
+    mats.push([frame.material, 0.35], [tri.material, 0.9]);
+    const done = () => resolve({ object: g, setOpacity: fades(mats), free() { freeObject(g); } });
     if (!id) return done();
     new THREE.TextureLoader().load(`https://i.ytimg.com/vi/${id}/hqdefault.jpg`, (t) => {
-      t.colorSpace = THREE.SRGBColorSpace; g.add(plane(t, size, h, 0.85)); done();
+      t.colorSpace = THREE.SRGBColorSpace;
+      const pic = plane(t, size, h, 0.85);
+      g.add(pic);
+      mats.push([pic.material, 0.85]);
+      learn?.(traceImage(t.image, 1, 9 / 16));
+      done();
     }, undefined, done);
-  }), { proxy, solid: false, what: 'film' });
-  return piece;
+  }), { src, outline: m.outline, solid: false, what: 'film' });
 }
 
 // Heavy pieces (pictures, films, 3D models, splats) load only while someone is near the
@@ -250,26 +271,43 @@ function inTurn(load) {
   return go;
 }
 
-function lazyPiece(size, load, { proxy = boxLines(size), solid = true, what = '3D piece', heavy = solid } = {}) {
+function lazyPiece(size, load, { src, outline, solid = true, what = '3D piece', heavy = solid } = {}) {
   const group = new THREE.Group();
-  group.add(proxy);
+  // From afar, the piece's own drawing in white lines. Never a stand-in: until its drawing
+  // exists (it is made the first time the piece loads), nothing shows from afar.
+  let drawing = null;
+  const draw = (o) => {
+    const d = o && outlineObject(o, size);
+    if (!d) return false;
+    if (drawing) { drawing.removeFromParent(); drawing.geometry.dispose(); drawing.material.dispose(); }
+    drawing = onLayer(d);
+    group.add(drawing);
+    return true;
+  };
+  const known = outline || knownOutline(src);
+  draw(known);
+  // A piece loaded without a drawing makes one, for this visit and for the studio to keep.
+  const learn = known ? null : (o) => { if (!o) return; keepOutline(src, o); draw(o); };
   const b = bag;
-  let obj = null, want = false, busy = false;
+  let obj = null, want = false, busy = false, fade = 0, seen = 1;
   const piece = {
     group, solid,
     lazy: {
-      heavy, // models and splats: only for the plot someone is actually at
+      heavy, // models and splats wait their turn
+      get loaded() { return !!obj || busy; },
+      get drawn() { return !!drawing; },
       load() {
         want = true;
         if (obj || busy) return;
         busy = true;
-        (heavy ? inTurn(load) : load()).then((o) => {
+        (heavy ? inTurn(() => load(learn)) : load(learn)).then((o) => {
           busy = false;
           if (!o) return;
           if (b.gone || !want) return o.free();
           obj = o;
+          fade = 0;
+          o.setOpacity?.(0);
           group.add(onLayer(o.object));
-          proxy.visible = false;
         }).catch((e) => {
           busy = false;
           // Say so instead of staying silent: the studio shows a note, the console the reason.
@@ -283,28 +321,26 @@ function lazyPiece(size, load, { proxy = boxLines(size), solid = true, what = '3
         obj.object.removeFromParent();
         obj.free();
         obj = null;
-        proxy.visible = true;
+        fade = 0;
       },
     },
-    setOpacity(a) { obj?.setOpacity?.(a); },
+    setOpacity(a) { seen = a; },
     update(t, dt, info) {
       obj?.update?.(dt, info);
-      // While it loads, the outline breathes, so a visitor knows something is coming.
-      if (busy) proxy.material.opacity = 0.25 + 0.2 * Math.sin(t * 4);
+      // The real piece fades in over its drawing, and the drawing gives way.
+      if (obj && fade < 1) fade = Math.min(1, fade + dt / 0.9);
+      if (obj) obj.setOpacity?.(fade * seen);
+      if (!drawing) return;
+      // While it loads, the drawing breathes, so a visitor knows something is coming.
+      drawing.material.opacity = drawing.userData.baseOpacity * seen * (1 - fade) * (busy ? 0.6 + 0.4 * Math.sin(t * 4) : 1);
+      drawing.visible = fade < 1;
     },
     dispose() { piece.lazy.unload(); },
   };
   return piece;
 }
 
-function boxLines(size) {
-  const h = size / 2;
-  const g = new THREE.EdgesGeometry(new THREE.BoxGeometry(size, size, size));
-  const l = new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: PAPER, transparent: true, opacity: 0.12, depthWrite: false }));
-  l.position.y = 0;
-  l.userData.h = h;
-  return l;
-}
+
 
 // Fit an object into a cube of `size`, centred on the holder.
 function fitInto(obj, box, size) {
@@ -374,9 +410,10 @@ function lightModels() {
   host.scene.add(modelLight);
 }
 
-function modelPiece(src, size) {
+function modelPiece(m, size) {
+  const src = m.src;
   if (embedFor(src)) return { group: new THREE.Group() }; // Sketchfab pages cannot stand in the city; they play in the panel.
-  return lazyPiece(size, async () => {
+  return lazyPiece(size, async (learn) => {
     let base;
     try { base = await useModel(src); } catch (e) { releaseModel(src); throw e; }
     // Skinned models need their skeleton copied too; plain ones are cheaper to copy.
@@ -386,6 +423,7 @@ function modelPiece(src, size) {
     obj.add(scene);
     lightModels();
     fitInto(scene, base.box, size);
+    learn?.(traceModel(obj, size));
     // Each copy gets its own materials (to fade on its own); shapes and textures stay shared.
     const mats = [];
     scene.traverse((o) => {
@@ -405,7 +443,7 @@ function modelPiece(src, size) {
       setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }),
       update: (dt) => mixer?.update(dt),
     };
-  });
+  }, { src, outline: m.outline });
 }
 
 // Gaussian splats (World Labs exports and the like) through Spark, World Labs' own
@@ -455,9 +493,10 @@ function coreBox(mesh) {
   return box.expandByVector(box.getSize(new THREE.Vector3()).multiplyScalar(0.12));
 }
 
-function splatPiece(src, size, show) {
+function splatPiece(m, size) {
+  const src = m.src, show = m.show;
   if (!host) return null;
-  return lazyPiece(size, async () => {
+  return lazyPiece(size, async (learn) => {
     const S = await sparkLib();
     const fileType = splatType(src);
     const mesh = new S.SplatMesh(src.startsWith('data:') ? { fileBytes: await bytesOf(src), fileType } : { url: src, fileType });
@@ -478,8 +517,9 @@ function splatPiece(src, size, show) {
       edit.add(keep);
       mesh.add(edit);
     }
+    learn?.(traceSplat(mesh, core, size));
     return { object: obj, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
-  });
+  }, { src, outline: m.outline });
 }
 
 function sculpturePiece(build, size, palette) {
@@ -628,13 +668,13 @@ function constellationPiece(c, size, ink) {
 
 function makePiece(m, size, palette, ink) {
   switch (m.kind) {
-    case 'image': return imagePiece(m.src, size, ink);
+    case 'image': return imagePiece(m, size, ink);
     case 'sketch': return sketchPiece(m.sketch, size, ink);
     case 'melody': return melodyPiece(m.melody, size, ink);
     case 'audio': return audioPiece(size, ink);
-    case 'video': return videoPiece(m.src, size, ink);
-    case 'model': return modelPiece(m.src, size);
-    case 'splat': return splatPiece(m.src, size, m.show);
+    case 'video': return videoPiece(m, size, ink);
+    case 'model': return modelPiece(m, size);
+    case 'splat': return splatPiece(m, size);
     case 'sculpture': return sculpturePiece(m.build, size, palette);
     case 'poem': return poemPiece(m.poem, size, ink);
     case 'constellation': return constellationPiece(m.constellation, size, ink);
@@ -762,13 +802,23 @@ export function createExhibit(world, U, mid) {
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, dist = 0, wake = true } = {}) {
+    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null } = {}) {
+      const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
       for (const p of pieces) {
-        // Near, or the plot someone chose; models and splats only for the plot someone is at.
-        // Nothing loads before the visitor has come in (wake).
-        if (p.piece.lazy && wake && (p.piece.lazy.heavy ? dist < 18 || presence > 0.2 : dist < 45 || presence > 0.5)) p.piece.lazy.load();
         const h = p.holder;
-        if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence }); continue; }
+        // How much of the view the piece fills: the real thing loads as you come close (or
+        // look at it closely), and gives way to its drawing again when it is small and far.
+        // Nothing loads before the visitor has come in (wake); the studio shows everything (all).
+        let inView = 1;
+        if (camera) { h.getWorldPosition(look); inView = (p.size0 * h.getWorldScale(ws).x) / (2 * Math.max(0.01, camera.position.distanceTo(look)) * tanHalf); }
+        p.nearView = inView;
+        const lazy = p.piece.lazy;
+        // A piece with no drawing yet (from a world saved before drawings) loads from much
+        // further, as it used to, and leaves its drawing behind for the rest of the visit.
+        const reach = !lazy?.drawn ? (come ? 0.02 : 0.05) : come ?? (lazy.heavy ? 0.2 : 0.15);
+        if (lazy && wake && (all || p.held || inView > reach)) lazy.load();
+        else if (lazy?.loaded && lazy.drawn && !all && !p.held && inView < reach * 0.4) lazy.unload();
+        if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
         // 'wake': stillness from afar, motion as you come; the others keep the shared clock.
@@ -808,7 +858,7 @@ export function createExhibit(world, U, mid) {
           ry += d * near;
         }
         h.rotation.y = ry;
-        p.piece.update?.(t, dt, { camera, audible, presence });
+        p.piece.update?.(t, dt, { camera, audible, presence, near: p.nearView });
       }
     },
     dispose() {

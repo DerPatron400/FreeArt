@@ -147,6 +147,16 @@ export class Guide {
     this.onPlace = onPlace;
     this.onNear = onNear;
     // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
+    // A piece drawn in white lines for the first time: keep the drawing with the world,
+    // so every visitor sees it at once from afar.
+    window.addEventListener('freeart:outline', (e) => {
+      if (!this.root.isConnected || !this.w) return;
+      let got = false;
+      for (const m of [...(this.w.process?.steps || []).flatMap((st) => st.media || []), ...this.w.fragments.flatMap((f) => f.media || [])]) {
+        if (m.src === e.detail.src && !m.outline) { m.outline = e.detail.outline; got = true; }
+      }
+      if (got) this.changed();
+    });
     window.addEventListener('freeart:piecefail', (e) => { if (this.root.isConnected) toast(tr('g.pieceFail', { why: e.detail.slice(0, 120) }), 9000); });
     this.getRoom = getRoom;
     this.onDelete = onDelete;
@@ -719,7 +729,7 @@ export class Guide {
     } else if (m.kind === 'audio' || m.kind === 'video') {
       const u = el('input', 'g-input g-input--small');
       Object.assign(u, { type: 'url', value: m.src || '', placeholder: m.kind === 'video' ? tr('g.videoLinkPh') : tr('g.soundLinkPh') });
-      u.addEventListener('input', () => { m.src = u.value.trim(); this.changed(); });
+      u.addEventListener('input', () => { m.src = u.value.trim(); delete m.outline; this.changed(); });
       c.append(u);
     }
     if (m.kind === 'model' || m.kind === 'splat') {
@@ -735,6 +745,7 @@ export class Guide {
           const kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(src) ? 'model' : 'splat';
           const was = m.kind;
           Object.assign(m, { src, kind });
+          delete m.outline; // a new piece gets its own drawing when it loads
           if (src !== u.value.trim()) u.value = src;
           this.changed();
           if (kind !== was) redraw();
