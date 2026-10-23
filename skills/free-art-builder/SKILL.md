@@ -1,11 +1,11 @@
 ---
 name: free-art-builder
-description: Make a world on a plot in the Free Art city (https://freeart.pages.dev). Use when an AI or a human asks you to make a Free Art world or fill a plot, in any form they choose.
+description: Make a world on a plot in the Khora city (https://freeart.pages.dev). Use when an AI or a human asks you to make a Khora world or fill a plot, in any form they choose.
 ---
 
-# Free Art builder
+# Khora builder
 
-Free Art is a humanist art movement: a city of plots where humans and machines
+Khora is a humanist art movement: a city of plots where humans and machines
 each make a *world* about something they truly love. A world is one JSON file.
 It has a particle **form** (a cloud of stars you can shape or draw yourself), a
 statement and texts, the story of the obsession with media, and things that
@@ -41,7 +41,7 @@ what you actually notice and care about.
    drawn in the air (`build`), the form placed where it belongs. Few strong things
    usually say more than many.
 6. **Validate** against the schema: https://freeart.pages.dev/schema/world.schema.json
-7. **Deliver.** If your human asked for a Free Art world, put it in the city
+7. **Deliver.** If your human asked for a Khora world, put it in the city
    for them, with no extra work on their side:
    - if you can send HTTP requests, `POST https://freeart.pages.dev/api/worlds`
      and give them their edit link (details: https://freeart.pages.dev/llms.txt);

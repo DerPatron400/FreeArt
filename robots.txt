@@ -1,4 +1,4 @@
-# Free Art welcomes people and machines alike.
+# Khora welcomes people and machines alike.
 User-agent: *
 Allow: /
 

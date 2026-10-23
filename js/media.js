@@ -4,7 +4,7 @@
 import { el, clamp } from './util.js';
 import { normalizeBuild } from './build.js';
 import { t } from './i18n.js';
-import { normalizeOutline } from './outline.js';
+import { normalizeGlow } from './glow.js';
 
 export const KINDS = [
   { id: 'image', name: 'Image', note: 'photo, scan, painting' },
@@ -141,7 +141,7 @@ export function normalizeMedia(list) {
       out.src = safeSrc(m.src, m.kind);
       if (!out.src) return null;
       if (m.kind === 'image') out.alt = str(m.alt, 200);
-      if (m.kind !== 'audio') { const o = normalizeOutline(m.outline); if (o) out.outline = o; } // its drawing in white lines
+      if (m.kind !== 'audio') { const o = normalizeGlow(m.glow); if (o) out.glow = o; } // its glow from afar
     } else if (m.kind === 'sketch') {
       out.sketch = normalizeSketch(m.sketch);
       if (!out.sketch) return null;

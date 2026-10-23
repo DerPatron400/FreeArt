@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/DerPatron400/FreeArt/schema/world.schema.json",
-  "title": "Free Art world",
+  "title": "Khora world",
   "description": "One creator's world: what they love, shown as a living particle form with fragments in orbit.",
   "type": "object",
   "required": [
@@ -194,10 +194,10 @@
                 "kind"
               ],
               "properties": {
-                "outline": {
+                "glow": {
                   "type": "object",
-                  "description": "Made by the site, not by hand: the white-line drawing that stands for a file piece until a visitor comes close. t is 'l' (line segments) or 'p' (points); d is base64 of signed bytes, x y z per point, in units of the piece's size.",
-                  "properties": { "t": { "enum": ["l", "p"] }, "d": { "type": "string", "maxLength": 20000 } }
+                  "description": "Made by the site, not by hand: the soft glow in the piece's own colours that stands for a file piece until a visitor comes close. t is 'g'; d is base64 of 4 x 4 RGB bytes, row by row from the top; a is the piece's aspect (width / height).",
+                  "properties": { "t": { "const": "g" }, "d": { "type": "string", "maxLength": 64 }, "a": { "type": "number", "minimum": 0.25, "maximum": 4 } }
                 },
                 "kind": {
                   "enum": [

@@ -286,7 +286,7 @@ export class Walker {
     this.pos.addScaledVector(this.vel, dt);
     this.pos.x = clamp(this.pos.x, -lim, lim);
     this.pos.z = clamp(this.pos.z, -lim, lim);
-    this.pos.y = clamp(this.pos.y, 0.3, 15); // the ocean sky hangs at 18
+    this.pos.y = clamp(this.pos.y, 0.3, 15);
   }
 
   spring(dt) {

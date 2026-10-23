@@ -1,4 +1,4 @@
-// Shared pieces for the Free Art server: worlds in D1, files in R2 (or, until R2
+// Shared pieces for the Khora server: worlds in D1, files in R2 (or, until R2
 // is switched on, in D1 in small chunks). No accounts: each world has a private
 // edit key, and the server keeps only its SHA-256 hash.
 

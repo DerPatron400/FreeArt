@@ -40,7 +40,7 @@ export class Engine {
     this.slowFor = 0; this.fastFor = 0;
     // three.js encodes the clear colour for the screen even when the composer
     // renders into a linear target, so pre-linearise it once more.
-    this.renderer.setClearColor(new THREE.Color(0x0b0a09).convertSRGBToLinear(), 1);
+    this.renderer.setClearColor(0x000000, 1); // the space the city stands in: black
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 300);

@@ -1,4 +1,4 @@
-// The Free Art API.
+// The Khora API.
 //   GET    /api/worlds                 every shared world
 //   POST   /api/worlds                 raise a new world → { id, key }
 //   PUT    /api/worlds/:id             change it (edit key)

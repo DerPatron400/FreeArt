@@ -1,5 +1,5 @@
 {
-  "about": "Free Art shared gallery. Each entry is a world file in this folder; see schema/world.schema.json and llms.txt.",
+  "about": "Khora shared gallery. Each entry is a world file in this folder; see schema/world.schema.json and llms.txt.",
   "worlds": [
     "between-the-words.json"
   ]

@@ -1,5 +1,5 @@
-// The sky is an ocean seen from below: rolling swells, and in them a soft,
-// blurred reflection of the city's lines and its art. Planar reflection as in three.js's Reflector, with its own
+// The ground is still dark water: slow, low swells, and in them a soft, blurred
+// reflection of the city's lines and its art. Planar reflection as in three.js's Reflector, with its own
 // shader, and with the line layer (blobs, builds) included in the reflection.
 import * as THREE from 'three';
 
@@ -26,13 +26,14 @@ vec3 waves(vec2 p, float t) {
 const vertexShader = /* glsl */ `
 uniform mat4 textureMatrix;
 uniform float uTime;
+uniform float uAmp;
 varying vec4 vUv;
 varying vec3 vWorld;
 ${WAVES}
 void main() {
   vec4 w = modelMatrix * vec4(position, 1.0);
   vec3 h = waves(w.xz, uTime);
-  w.y += h.x; // the swell itself, so crests stand out against the distance
+  w.y += h.x * uAmp; // the swell itself, kept low so the ground stays calm
   vUv = textureMatrix * vec4(position, 1.0);
   vWorld = w.xyz;
   gl_Position = projectionMatrix * viewMatrix * w;
@@ -42,6 +43,7 @@ const fragmentShader = /* glsl */ `
 #define FINE
 uniform sampler2D tReflect;
 uniform float uTime;
+uniform float uAmp;
 uniform vec3 uDeep;
 uniform vec3 uCrest;
 uniform vec3 uFog;
@@ -51,8 +53,8 @@ varying vec3 vWorld;
 ${WAVES}
 void main() {
   vec3 h = waves(vWorld.xz, uTime);
-  // Seen from below: the surface normal points down, tilted by the slopes.
-  vec3 N = normalize(vec3(h.y, -1.0, h.z));
+  // Seen from above: the surface normal points up, tilted by the slopes.
+  vec3 N = normalize(vec3(-h.y * uAmp, 1.0, -h.z * uAmp));
   vec3 V = normalize(cameraPosition - vWorld);
   float facing = max(dot(N, V), 0.0);
   float fresnel = 0.12 + 0.88 * pow(1.0 - facing, 4.0);
@@ -71,12 +73,12 @@ void main() {
   refl /= wsum;
 
   // Body of the water: darker in the troughs, lighter on the faces of the swell.
-  float lit = clamp(dot(N, normalize(vec3(0.35, -1.0, 0.25))) * 0.5 + 0.5, 0.0, 1.0);
+  float lit = clamp(dot(N, normalize(vec3(0.35, 1.0, 0.25))) * 0.5 + 0.5, 0.0, 1.0);
   float crest = smoothstep(0.35, 0.95, h.x);
   vec3 body = mix(uDeep * 0.5, uDeep * 1.8, pow(lit, 3.0)) + uCrest * crest * 0.025;
   // A faint glint where the slope catches the city's light.
   vec3 R = reflect(-V, N);
-  float glint = pow(max(dot(R, normalize(vec3(-0.2, -1.0, 0.1))), 0.0), 80.0);
+  float glint = pow(max(dot(R, normalize(vec3(-0.2, 1.0, 0.1))), 0.0), 80.0);
 
   vec3 col = body + refl * (0.35 + 0.65 * fresnel) * 0.85 + uCrest * glint * 0.18;
   float d = length(vWorld.xz - cameraPosition.xz);
@@ -85,18 +87,18 @@ void main() {
   gl_FragColor = vec4(mix(uFog, col, fade), 1.0);
 }`;
 
-export function createOcean(renderer, { height = 24, size = 600, resolution = 0.3 } = {}) {
+export function createOcean(renderer, { height = -0.4, size = 600, resolution = 0.3, amp = 0.25 } = {}) {
   const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 0, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   const textureMatrix = new THREE.Matrix4();
   const uniforms = {
-    tReflect: { value: target.texture }, textureMatrix: { value: textureMatrix }, uTime: { value: 0 },
-    uDeep: { value: new THREE.Color('#0b0a09').convertSRGBToLinear() },
+    tReflect: { value: target.texture }, textureMatrix: { value: textureMatrix }, uTime: { value: 0 }, uAmp: { value: amp },
+    uDeep: { value: new THREE.Color('#030303').convertSRGBToLinear() },
     uCrest: { value: new THREE.Color('#8f9a96').convertSRGBToLinear() },
     uTexel: { value: new THREE.Vector2(1, 1) },
-    uFog: { value: new THREE.Color(0x0b0a09).convertSRGBToLinear() },
+    uFog: { value: new THREE.Color(0x000000) },
   };
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size, 240, 240), new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader }));
-  mesh.rotation.x = Math.PI / 2; // faces down
+  mesh.rotation.x = -Math.PI / 2; // faces up
   mesh.position.y = height;
   mesh.userData.uniforms = uniforms;
 
@@ -157,67 +159,4 @@ export function createOcean(renderer, { height = 24, size = 600, resolution = 0.
     mesh.visible = true;
   };
   return mesh;
-}
-
-// The same water standing on the four sides, so the city lies in the ocean all round.
-// The walls carry the swell and its light but no mirror of their own: one reflection
-// pass (the sky) is enough, and the sides read as deep water fading into the dark.
-const wallVertex = /* glsl */ `
-uniform float uTime;
-varying vec3 vWorld;
-varying vec2 vP;
-${WAVES}
-void main() {
-  vec4 w = modelMatrix * vec4(position, 1.0);
-  // Waves run along the wall (x) and up it (y), in the wall's own plane.
-  vP = vec2(position.x, position.y * 1.6);
-  vec3 h = waves(vP, uTime);
-  vec3 p = position + vec3(0.0, 0.0, -h.x * 0.6); // bulging softly outward and back
-  w = modelMatrix * vec4(p, 1.0);
-  vWorld = w.xyz;
-  gl_Position = projectionMatrix * viewMatrix * w;
-}`;
-
-const wallFragment = /* glsl */ `
-#define FINE
-uniform float uTime;
-uniform vec3 uDeep;
-uniform vec3 uCrest;
-uniform vec3 uFog;
-uniform float uTop;
-varying vec3 vWorld;
-varying vec2 vP;
-${WAVES}
-void main() {
-  vec3 h = waves(vP, uTime);
-  vec3 N = normalize(vec3(-h.y, -h.z, 1.0)); // in the wall's frame, facing the city
-  float lit = clamp(dot(N, normalize(vec3(0.3, 0.8, 0.5))) * 0.5 + 0.5, 0.0, 1.0);
-  float crest = smoothstep(0.35, 0.95, h.x);
-  // The walls have no mirror, so they carry a little more of the water's own light.
-  vec3 body = mix(uDeep * 0.7, uDeep * 2.6 + uCrest * 0.035, pow(lit, 2.0)) + uCrest * crest * 0.07;
-  float glint = pow(max(dot(reflect(vec3(0.0, 0.0, -1.0), N), normalize(vec3(-0.2, 0.9, 0.3))), 0.0), 40.0);
-  vec3 col = body + uCrest * glint * 0.3;
-  // Lighter towards the surface above, darker towards the depths below.
-  col *= mix(0.55, 1.15, smoothstep(0.0, uTop, vWorld.y));
-  float d = length(vWorld - cameraPosition);
-  float fade = exp(-d * 0.014) * (1.0 - smoothstep(110.0, 220.0, d));
-  gl_FragColor = vec4(mix(uFog, col, fade), 1.0);
-}`;
-
-export function createOceanWalls(sky, { reach, height = 18, depth = 6 }) {
-  const u = sky.userData.uniforms;
-  const uniforms = { uTime: u.uTime, uDeep: u.uDeep, uCrest: u.uCrest, uFog: u.uFog, uTop: { value: height } };
-  const material = new THREE.ShaderMaterial({ uniforms, vertexShader: wallVertex, fragmentShader: wallFragment });
-  const group = new THREE.Group();
-  const tall = height + depth, long = reach * 2 + 40;
-  const geometry = new THREE.PlaneGeometry(long, tall, 200, 40);
-  geometry.translate(0, tall / 2 - depth, 0);
-  for (let i = 0; i < 4; i++) {
-    const wall = new THREE.Mesh(geometry, material);
-    const a = (i * Math.PI) / 2;
-    wall.position.set(-Math.sin(a) * reach, 0, -Math.cos(a) * reach);
-    wall.rotation.y = a; // each faces the centre
-    group.add(wall);
-  }
-  return group;
 }

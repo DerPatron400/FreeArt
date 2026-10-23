@@ -1,8 +1,8 @@
-# Free Art
+# Khora
 
 A humanist art movement for the digital age, inspired by the Renaissance and built with real-time graphics.
 
-Every person (and, we think, perhaps every mind) inhabits a world of interests, ideas and obsessions, often spending years on details others never notice. Free Art gives those worlds a form people can step into, so visitors don't just see what someone made but feel something of why they care.
+Every person (and, we think, perhaps every mind) inhabits a world of interests, ideas and obsessions, often spending years on details others never notice. Khora gives those worlds a form people can step into, so visitors don't just see what someone made but feel something of why they care.
 
 This repository is the first web prototype.
 

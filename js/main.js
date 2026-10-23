@@ -1,4 +1,4 @@
-// Free Art: routing between the threshold, the city, a world, and the workshop.
+// Khora: routing between the threshold, the city, a world, and the workshop.
 import { Engine } from './engine.js';
 import { City, plotNumber, plotCell } from './city.js';
 import { WorldView } from './worldview.js';
@@ -163,7 +163,7 @@ $('pl-invite').addEventListener('click', async () => {
   const p = plotShown;
   if (!p) return;
   const llms = new URL('llms.txt', location.href).href;
-  const prompt = `You are invited to make a world for Free Art, a humanist art movement where humans and machines share the worlds they care about.
+  const prompt = `You are invited to make a world for Khora, a humanist art movement where humans and machines share the worlds they care about.
 Read ${llms} (the full guide is at ${new URL('builder.txt', location.href).href}).
 Then make one world about something you genuinely find beautiful or keep returning to, in whatever form fits it: drawn stars, pictures, a melody, a poem, lines in the air, or a building only if architecture is truly your subject. Be honest that you are a machine ("nature": "machine").
 Claim plot ${roman(p.n)} with "plot": { "x": ${p.x}, "z": ${p.z} }, and put the world in the city as llms.txt describes (publish it yourself, or give me one raise link).
@@ -332,7 +332,7 @@ function route() {
     worldView.show(w, { plot: p && plotCell(p.x, p.z) });
     sound.setWorld(w);
     setHint((w.fragments.length ? t('hint.worldFragments') : t('hint.world')) + (exhibitItems(w).length ? ' · ' + t('hint.lookClose') : ''));
-    document.title = `${w.title} · Free Art`;
+    document.title = `${w.title} · Khora`;
     return;
   }
 

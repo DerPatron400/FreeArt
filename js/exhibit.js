@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { createBuild } from './build.js';
 import { SHOWABLE, inkColors, embedFor, constellationLayout, melodyFreq, ctx, pluck } from './media.js';
-import { outlineObject, knownOutline, keepOutline, traceImage, traceModel, traceSplat } from './outline.js';
+import { glowTint, createHaze, HAZE_MAX, knownGlow, keepGlow, glowImage, glowColour, glowModel, glowSplat } from './glow.js';
 
 const PAPER = '#ece4d4';
 const FONT = '"Cormorant Garamond", Georgia, serif';
@@ -94,13 +94,13 @@ function imagePiece(m, size, ink) {
       t.colorSpace = THREE.SRGBColorSpace;
       const k = t.image.height / t.image.width;
       const w = k > 1 ? size / k : size, h = w * k;
-      learn?.(traceImage(t.image, w / size, h / size));
+      learn?.(glowImage(t.image));
       const g = new THREE.Group();
       const pic = plane(t, w, h, 0.92), frame = frameLines(w * 1.04, h * 1.04, ink[1], 0.35);
       g.add(pic, frame);
       resolve({ object: g, setOpacity(a) { pic.material.opacity = 0.92 * a; frame.material.opacity = 0.35 * a; }, free() { freeObject(g); t.dispose(); } });
     }, undefined, reject);
-  }), { src, outline: m.outline, solid: false, what: 'picture' });
+  }), { src, glow: m.glow, solid: false, what: 'picture' });
 }
 
 function sketchPiece(sketch, size, ink) {
@@ -221,11 +221,22 @@ function videoPiece(m, size, ink) {
       t.colorSpace = THREE.SRGBColorSpace;
       const pic = plane(t, size, h, 0.92);
       g.add(pic);
-      // Without a drawing yet: trace about the thirtieth frame (a second in), past any fade from black.
+      // Without a glow yet: take its colours from a later frame (well into the film, past
+      // any title or fade from black). Three are looked at, and the most colourful kept,
+      // so a white flash or a dark cut does not stand for the whole film.
       if (learn) {
-        const tracer = Object.assign(document.createElement('video'), { src, muted: true, playsInline: true, crossOrigin: 'anonymous', preload: 'auto' });
-        tracer.addEventListener('loadedmetadata', () => { tracer.currentTime = Math.min(1, (tracer.duration || 2) * 0.25); }, { once: true });
-        tracer.addEventListener('seeked', () => { learn(traceImage(tracer, 1, 9 / 16)); tracer.removeAttribute('src'); tracer.load(); }, { once: true });
+        const still = Object.assign(document.createElement('video'), { src, muted: true, playsInline: true, crossOrigin: 'anonymous', preload: 'auto' });
+        const at = [0.4, 0.6, 0.8];
+        let best = null;
+        const next = () => { still.currentTime = (still.duration || 2) * at.shift(); };
+        still.addEventListener('loadedmetadata', next, { once: true });
+        still.addEventListener('seeked', () => {
+          const o = glowImage(still);
+          if (glowColour(o) > glowColour(best)) best = o;
+          if (at.length) return next();
+          learn(best);
+          still.removeAttribute('src'); still.load();
+        });
       }
       return resolve({
         object: g,
@@ -253,14 +264,14 @@ function videoPiece(m, size, ink) {
       const pic = plane(t, size, h, 0.85);
       g.add(pic);
       mats.push([pic.material, 0.85]);
-      learn?.(traceImage(t.image, 1, 9 / 16));
+      learn?.(glowImage(t.image));
       done();
     }, undefined, done);
-  }), { src, outline: m.outline, solid: false, what: 'film' });
+  }), { src, glow: m.glow, solid: false, what: 'film' });
 }
 
 // Heavy pieces (pictures, films, 3D models, splats) load only while someone is near the
-// plot and are freed again when they leave; from afar a faint frame keeps their place.
+// plot and are freed again when they leave; from afar a soft glow in their colours keeps their place.
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
@@ -271,31 +282,27 @@ function inTurn(load) {
   return go;
 }
 
-function lazyPiece(size, load, { src, outline, solid = true, what = '3D piece', heavy = solid } = {}) {
+function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piece', heavy = solid } = {}) {
   const group = new THREE.Group();
-  // From afar, the piece's own drawing in white lines. Never a stand-in: until its drawing
-  // exists (it is made the first time the piece loads), nothing shows from afar.
-  let drawing = null;
-  const draw = (o) => {
-    const d = o && outlineObject(o, size);
-    if (!d) return false;
-    if (drawing) { drawing.removeFromParent(); drawing.geometry.dispose(); drawing.material.dispose(); }
-    drawing = onLayer(d);
-    group.add(drawing);
-    return true;
-  };
-  const known = outline || knownOutline(src);
-  draw(known);
-  // A piece loaded without a drawing makes one, for this visit and for the studio to keep.
-  const learn = known ? null : (o) => { if (!o) return; keepOutline(src, o); draw(o); };
+  // From afar, the piece is only its colour in the plot's haze (see createExhibit). Never a
+  // stand-in: until its glow exists (made the first time the piece loads), it adds nothing.
+  let tint = null;
+  const shine = (o) => { const c = o && glowTint(o); if (c) tint = c; };
+  const known = saved || knownGlow(src);
+  shine(known);
+  // A piece loaded without a glow makes one, for this visit and for the studio to keep.
+  const learn = known ? null : (o) => { if (!o) return; keepGlow(src, o); shine(o); };
   const b = bag;
-  let obj = null, want = false, busy = false, fade = 0, seen = 1;
+  let obj = null, want = false, busy = false, fade = 0, seen = 1, haze = 0;
   const piece = {
     group, solid,
+    // Its share of the haze: its colour, and how strongly it still shows there.
+    get tint() { return tint; },
+    get haze() { return haze; },
     lazy: {
       heavy, // models and splats wait their turn
       get loaded() { return !!obj || busy; },
-      get drawn() { return !!drawing; },
+      get drawn() { return !!tint; },
       load() {
         want = true;
         if (obj || busy) return;
@@ -311,7 +318,7 @@ function lazyPiece(size, load, { src, outline, solid = true, what = '3D piece', 
         }).catch((e) => {
           busy = false;
           // Say so instead of staying silent: the studio shows a note, the console the reason.
-          console.warn(`Free Art: a ${what} could not load`, e);
+          console.warn(`Khora: a ${what} could not load`, e);
           if (solid) window.dispatchEvent(new CustomEvent('freeart:piecefail', { detail: String(e?.message || e) }));
         });
       },
@@ -327,13 +334,11 @@ function lazyPiece(size, load, { src, outline, solid = true, what = '3D piece', 
     setOpacity(a) { seen = a; },
     update(t, dt, info) {
       obj?.update?.(dt, info);
-      // The real piece fades in over its drawing, and the drawing gives way.
+      // The real piece fades in out of the haze, and its light in the haze gives way.
       if (obj && fade < 1) fade = Math.min(1, fade + dt / 0.9);
       if (obj) obj.setOpacity?.(fade * seen);
-      if (!drawing) return;
-      // While it loads, the drawing breathes, so a visitor knows something is coming.
-      drawing.material.opacity = drawing.userData.baseOpacity * seen * (1 - fade) * (busy ? 0.6 + 0.4 * Math.sin(t * 4) : 1);
-      drawing.visible = fade < 1;
+      // While it loads, its light breathes, so a visitor knows something is coming.
+      haze = tint ? seen * (1 - fade) * (busy ? 0.6 + 0.4 * Math.sin(t * 4) : 1) : 0;
     },
     dispose() { piece.lazy.unload(); },
   };
@@ -423,7 +428,7 @@ function modelPiece(m, size) {
     obj.add(scene);
     lightModels();
     fitInto(scene, base.box, size);
-    learn?.(traceModel(obj, size));
+    learn?.(glowModel(obj));
     // Each copy gets its own materials (to fade on its own); shapes and textures stay shared.
     const mats = [];
     scene.traverse((o) => {
@@ -443,7 +448,7 @@ function modelPiece(m, size) {
       setOpacity: (a) => mats.forEach((m) => { m.opacity = a; }),
       update: (dt) => mixer?.update(dt),
     };
-  }, { src, outline: m.outline });
+  }, { src, glow: m.glow });
 }
 
 // Gaussian splats (World Labs exports and the like) through Spark, World Labs' own
@@ -517,9 +522,9 @@ function splatPiece(m, size) {
       edit.add(keep);
       mesh.add(edit);
     }
-    learn?.(traceSplat(mesh, core, size));
+    learn?.(glowSplat(mesh, core));
     return { object: obj, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
-  }, { src, outline: m.outline });
+  }, { src, glow: m.glow });
 }
 
 function sculpturePiece(build, size, palette) {
@@ -703,7 +708,8 @@ export function exhibitTop(world) {
 }
 
 // `mid` is the height (world units) the unplaced pieces circle at.
-export function createExhibit(world, U, mid) {
+// room: the plot's box ({ w, d, h }, standing on the ground), which the haze fills.
+export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(exhibitTop(world) * U + 0.15, U) }) {
   const own = bag = { textures: new Set(), media: new Set(), gone: false };
   const group = new THREE.Group();
   const ink = inkColors(world.palette);
@@ -720,6 +726,12 @@ export function createExhibit(world, U, mid) {
     // seeds come from its place in the list, so the motion is the same for everyone.
     pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0 });
   });
+  const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
+  const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
+  let revealed = false;
+  // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
+  const haze = pieces.some((p) => p.piece.lazy) ? createHaze(roomBox.min, roomBox.max) : null;
+  if (haze) group.add(onLayer(haze));
   // Where each piece stands and how it moves: read again whenever the maker moves it,
   // without rebuilding (and so without reloading) anything.
   let current = items;
@@ -802,22 +814,32 @@ export function createExhibit(world, U, mid) {
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null } = {}) {
+    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false } = {}) {
       const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
+      // At the plot (at: chosen, or the visitor stands by it), or the eye close to it from
+      // whichever side: the haze lifts and every piece shows as it is. Stepping well back
+      // again, the pieces go back into the haze.
+      let close = at;
+      if (camera) {
+        const d = roomBox.distanceToPoint(group.worldToLocal(eye.copy(camera.position)));
+        if (d < reveal) close = true;
+        else if (d < reveal * 1.7 && revealed) close = true;
+      }
+      revealed = close;
       for (const p of pieces) {
         const h = p.holder;
-        // How much of the view the piece fills: the real thing loads as you come close (or
-        // look at it closely), and gives way to its drawing again when it is small and far.
+        // How much of the view the piece fills (films play once it is large enough).
         // Nothing loads before the visitor has come in (wake); the studio shows everything (all).
         let inView = 1;
         if (camera) { h.getWorldPosition(look); inView = (p.size0 * h.getWorldScale(ws).x) / (2 * Math.max(0.01, camera.position.distanceTo(look)) * tanHalf); }
         p.nearView = inView;
         const lazy = p.piece.lazy;
-        // A piece with no drawing yet (from a world saved before drawings) loads from much
-        // further, as it used to, and leaves its drawing behind for the rest of the visit.
-        const reach = !lazy?.drawn ? (come ? 0.02 : 0.05) : come ?? (lazy.heavy ? 0.2 : 0.15);
-        if (lazy && wake && (all || p.held || inView > reach)) lazy.load();
-        else if (lazy?.loaded && lazy.drawn && !all && !p.held && inView < reach * 0.4) lazy.unload();
+        // Only at the plot (revealed): from any further it is its light in the haze. A piece
+        // with no glow yet (from a world saved before glows) loads from much further, as it
+        // used to, and leaves its glow behind for the rest of the visit.
+        const early = !lazy?.drawn && inView > (come ? 0.02 : 0.05);
+        if (lazy && wake && (all || p.held || revealed || early)) lazy.load();
+        else if (lazy?.loaded && lazy.drawn && !all && !p.held && !revealed) lazy.unload();
         if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
@@ -858,8 +880,22 @@ export function createExhibit(world, U, mid) {
           ry += d * near;
         }
         h.rotation.y = ry;
-        p.piece.update?.(t, dt, { camera, audible, presence, near: p.nearView });
+        p.piece.update?.(t, dt, { camera, audible, presence, near: revealed ? Math.max(p.nearView, 0.25) : p.nearView });
       }
+      if (!haze) return;
+      const u = haze.material.uniforms;
+      let n = 0;
+      for (const p of pieces) {
+        if (n >= HAZE_MAX) break;
+        const tint = p.piece.tint, w = p.piece.haze;
+        if (!tint || w < 0.01) continue;
+        const r = Math.max(U * 0.08, p.size0 * p.holder.scale.x * 0.75);
+        u.uP.value[n].set(p.holder.position.x, p.holder.position.y, p.holder.position.z, r);
+        u.uC.value[n].set(tint[0], tint[1], tint[2], w);
+        n++;
+      }
+      u.uCount.value = n;
+      haze.visible = n > 0;
     },
     dispose() {
       own.gone = true;

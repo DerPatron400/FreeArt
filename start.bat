@@ -1,5 +1,5 @@
 @echo off
-rem Serves Free Art locally and opens it in your browser.
+rem Serves Khora locally and opens it in your browser.
 cd /d "%~dp0"
 where python >nul 2>nul && (
   start "" http://localhost:5173

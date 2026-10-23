@@ -5,7 +5,7 @@ import { createForm, disposeForm } from './form.js';
 import { roman, el, lerp, clamp, rng } from './util.js';
 import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
-import { createOcean, createOceanWalls } from './ocean.js';
+import { createOcean } from './ocean.js';
 import { createExhibit, exhibitTop } from './exhibit.js';
 import { t } from './i18n.js';
 
@@ -181,12 +181,8 @@ export class City {
     this.group.add(this.boxes);
 
     this.buildStreets();
-    this.ocean = createOcean(this.engine.renderer, { height: 18 });
-    // ...and on every side: the city lies in the ocean, its walls just beyond where you can fly.
-    this.oceanWalls = createOceanWalls(this.ocean, { reach: EXTENT + 14, height: 18 });
-    this.ocean.add(this.oceanWalls);
-    this.oceanWalls.rotation.x = -Math.PI / 2; // undo the sky's turn, so the walls stand upright
-    this.oceanWalls.position.set(0, 0, 18); // and reach down to the ground (in the sky's turned frame)
+    // The city stands on dark water that mirrors it, softly; above is only black.
+    this.ocean = createOcean(this.engine.renderer);
     this.group.add(this.ocean);
 
     // Invisible volumes for picking.
@@ -316,7 +312,7 @@ export class City {
       p.h = Math.max(p.h0, buildTop(world.build) * U + 0.15, exhibitTop(world) * U + 0.15);
       const build = createBuild(world.build, world.palette, U);
       anchor.add(build);
-      const exhibit = createExhibit(world, U, world.build ? buildTop(world.build) * U * 0.45 : p.h0 * 0.5);
+      const exhibit = createExhibit(world, U, world.build ? buildTop(world.build) * U * 0.45 : p.h0 * 0.5, { w: p.w, d: p.d, h: p.h });
       anchor.add(exhibit.group);
       const form = createForm(world, { lod: 0.16, size: 0.62 });
       form.visible = !world.form.hidden;
@@ -388,9 +384,7 @@ export class City {
       e.controls.target.copy(ground);
       e.flyTo(ground.clone().add(new THREE.Vector3(0, 18, 24)), ground, 1.6);
       this.you.visible = true;
-      this.ocean.visible = false; // the map looks down from above the water
     } else {
-      this.ocean.visible = true;
       if (this.mode === 'map') this.walker.place(e.controls.target.x, e.controls.target.z, Math.atan2(e.camera.position.x - e.controls.target.x, e.camera.position.z - e.controls.target.z));
       this.you.visible = false;
       this.walker.activate();
@@ -409,7 +403,7 @@ export class City {
     const e = this.engine;
     e.setViewOffset(0);
     e.setMode('map');
-    e.scene.fog = new THREE.FogExp2(0x0b0a09, 0.016);
+    e.scene.fog = new THREE.FogExp2(0x000000, 0.016);
     Object.assign(e.controls, { minDistance: 5, maxDistance: 60, maxPolarAngle: 1.32, autoRotate: false });
     for (const it of this.items) it.label.hidden = false;
     for (const it of this.items) it.form.userData.uniforms.uReveal.value = fromWorld ? 1 : 0;
@@ -422,7 +416,6 @@ export class City {
     else w.place(0, 3.2, 0, 1.6);
     w.mesh.visible = this.mode !== 'map';
     this.you.visible = this.mode === 'map';
-    this.ocean.visible = this.mode !== 'map';
     if (fromWorld && from) {
       const c = center(from.x, from.z);
       e.camera.position.copy(c).add(new THREE.Vector3(0, from.h * 0.6, 3));
@@ -556,11 +549,15 @@ export class City {
       if (!far) {
         // Presence: how close a visitor is. Some exhibitions only gather when someone comes.
         let presence = this.selected === it.plot ? 1 : 0;
+        // At the plot: you chose it, or you stand by it (from whichever side), so it shows as it is.
+        let at = this.selected === it.plot;
         if (this.active && this.mode !== 'map') {
           const d = Math.hypot(this.walker.pos.x - it.anchor.position.x, this.walker.pos.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
+          const out = Math.hypot(Math.max(0, Math.abs(this.walker.pos.x - it.plot.cx) - it.plot.w / 2), Math.max(0, Math.abs(this.walker.pos.z - it.plot.cz) - it.plot.d / 2));
+          at = at || out < STREET;
         }
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active });
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, at });
       }
 
       if (it.label.hidden) continue;

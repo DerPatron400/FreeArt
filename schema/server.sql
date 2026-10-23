@@ -1,4 +1,4 @@
--- Free Art shared city (Cloudflare D1). Apply with:
+-- Khora shared city (Cloudflare D1). Apply with:
 --   npx wrangler d1 execute freeart --remote --file schema/server.sql
 CREATE TABLE IF NOT EXISTS worlds (
   id TEXT PRIMARY KEY,
