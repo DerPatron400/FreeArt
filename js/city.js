@@ -8,6 +8,7 @@ import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createOcean } from './ocean.js';
 import { createExhibit, exhibitTop } from './exhibit.js';
 import { createDoorway, DOOR_RADIUS } from './portal.js';
+import { Hall } from './hall.js';
 import { t } from './i18n.js';
 
 // Physical key (layout and shift independent) so keydown and keyup always match.
@@ -145,6 +146,7 @@ export class City {
     engine.scene.add(this.group);
     this.buildStatic();
     this.walker = new Walker(engine, this, { EXTENT, plotAt });
+    this.hall = new Hall(this); // a plot you step into grows into a great space with a guide
     this.visitors = new Visitors(this, 4);
     engine.updaters.add((t, dt) => this.update(t, dt));
 
@@ -259,25 +261,26 @@ export class City {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('run', new THREE.Float32BufferAttribute(run, 1));
-    this.laneUniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x8f8677) } };
+    this.laneUniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x8f8677) }, uFade: { value: 1 } };
     this.lanes = new THREE.LineSegments(g, new THREE.ShaderMaterial({
       uniforms: this.laneUniforms, transparent: true, depthWrite: false,
       vertexShader: 'attribute float run; varying float vRun; void main(){ vRun = run; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-      fragmentShader: `uniform float uTime; uniform vec3 uColor; varying float vRun;
+      fragmentShader: `uniform float uTime; uniform vec3 uColor; uniform float uFade; varying float vRun;
         void main(){
           float d = fract((vRun - uTime * 0.18) / 1.5);
           float on = smoothstep(0.0, 0.06, d) * (1.0 - smoothstep(0.46, 0.52, d));
           if (on < 0.01) discard;
-          gl_FragColor = vec4(uColor, 0.16 * on);
+          gl_FragColor = vec4(uColor, 0.16 * on * uFade);
         }`,
     }));
     this.group.add(this.lanes);
   }
 
   // Plot volumes: a lot grows to hold whatever was built on it.
-  refreshVolumes() {
+  // skip: a plot grown into the hall, whose own small lines would stand inside it.
+  refreshVolumes(skip = null) {
     const boxes = [];
-    for (const p of PLOTS) boxEdges(p.cx, p.cz, p.w, p.d, p.h, boxes);
+    for (const p of PLOTS) if (p !== skip) boxEdges(p.cx, p.cz, p.w, p.d, p.h, boxes);
     this.boxes.geometry.dispose();
     this.boxes.geometry = new THREE.BufferGeometry();
     this.boxes.geometry.setAttribute('position', new THREE.Float32BufferAttribute(boxes, 3));
@@ -374,6 +377,7 @@ export class City {
   }
 
   setMode(mode) {
+    if (this.hall.it) this.hall.reset();
     if (mode === 'tour') {
       if (this.mode === 'map') this.setMode('walk');
       this.select(null);
@@ -426,11 +430,20 @@ export class City {
       e.camera.position.copy(c).add(new THREE.Vector3(0, from.h * 0.6, 3));
       e.controls.target.copy(c).setY(from.h * 0.5);
     } else if (!fromWorld) {
-      e.camera.position.set(0, 70, 70);
+      e.camera.position.set(0, 82, 58);
       e.controls.target.set(0, 0, 0);
+      // Arriving: first the whole city from high above, every plot glowing in its colours,
+      // drifting slowly round for a while, so the place and its beauty can be taken in;
+      // then down to a wide view of the streets (not yet close to anything).
+      if (!focus && this.mode !== 'map') {
+        const a = 0.32;
+        await e.flyTo(new THREE.Vector3(Math.sin(a) * 60, 74, Math.cos(a) * 60), new THREE.Vector3(0, 0, 0), 6.5);
+        if (!this.active) return;
+        w.dist = 11; w.pitch = 0.62;
+      }
     }
     const goal = w.cameraGoal(new THREE.Vector3());
-    await e.flyTo(this.mode === 'map' ? new THREE.Vector3(0, 19, 27).add(w.pos) : goal, w.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), fromWorld ? 2.2 : 3.8);
+    await e.flyTo(this.mode === 'map' ? new THREE.Vector3(0, 19, 27).add(w.pos) : goal, w.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), fromWorld ? 2.2 : 4.6);
     if (!this.active) return;
     if (this.mode === 'tour') this.mode = 'walk';
     this.setMode(this.mode);
@@ -438,6 +451,7 @@ export class City {
 
   hide() {
     this.active = false;
+    if (this.hall.it) this.hall.reset();
     this.walker.hide();
     this.group.visible = false;
     this.hovered = null;
@@ -504,18 +518,18 @@ export class City {
     const w = this.walker.pos, at = new THREE.Vector3(), facing = new THREE.Vector3();
     let best = null, bestD = Infinity;
     if (this.active && this.mode === 'walk') {
-      for (const it of this.items) {
-        const p = it.plot;
+      for (const it of this.hall.it ? [this.hall.it] : this.items) {
+        const p = { ...it.plot, ...this.hall.bounds(it) };
         if (w.y > p.h + 0.5) continue;
         const dx = Math.abs(w.x - p.cx) - p.w / 2, dz = Math.abs(w.z - p.cz) - p.d / 2;
         const out = dx > 0 || dz > 0;
         const dist = out ? Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) : -Math.max(dx, dz);
-        if (dist < bestD) { bestD = dist; best = { it, onX: out ? dx > dz : dx > dz }; }
+        if (dist < bestD) { bestD = dist; best = { it, p, onX: dx > dz }; }
       }
     }
     let open = 0, wall = null, height = 1;
     if (best && bestD < 3.2) {
-      const p = best.it.plot, R = Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
+      const p = best.p, R = Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
       height = R / DOOR_RADIUS;
       const y = Math.min(Math.max(w.y, R * 1.05), p.h - R * 1.05);
       if (best.onX) {
@@ -531,7 +545,7 @@ export class City {
       // come in, or about to leave), so it closes behind you as you walk on.
       open = bestD >= 0 ? 1 - Math.min(1, Math.max(0, (bestD - 0.4) / 2.8)) : 1 - Math.min(1, Math.max(0, (-bestD - 0.3) / 1.2));
       open = open * open * (3 - 2 * open);
-      wall = p.cx + ',' + p.cz + (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz);
+      wall = best.it.plot.cx + ',' + best.it.plot.cz + (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz);
     }
     this.doorway.setViewport(window.innerHeight, this.engine.renderer.getPixelRatio());
     this.doorway.update(t, dt, { at: wall ? at : null, facing, wall, open, height });
@@ -544,8 +558,16 @@ export class City {
     const e = this.engine;
     if (this.active && !e.flight && this.mode === 'map') this.walk(dt);
     this.walker.update(t, dt);
-    // Standing on a plot opens its panel; walking off closes it.
-    if (this.active && this.mode === 'walk' && !e.flight) {
+    this.hall.update(t, dt);
+    // In a grown plot the rest of the city falls away, so the space is the plot's alone.
+    const away = this.hall.it ? Math.min(1, Math.max(0, (this.hall.k - 1.2) / 1.5)) : 0;
+    this.boxes.material.opacity = 0.22 * (1 - away);
+    this.boxes.visible = away < 0.99;
+    this.laneUniforms.uFade.value = 1 - away;
+    for (const it of this.items) if (it !== this.hall.it) it.anchor.visible = away < 0.5;
+    this.labelsRoot.style.opacity = String(1 - away);
+    // Standing on a plot opens its panel; walking off closes it (in the hall, you stand in it).
+    if (this.active && this.mode === 'walk' && !e.flight && !this.hall.it) {
       const here = plotAt(this.walker.pos.x, this.walker.pos.z);
       if (here !== this.standing) {
         this.standing = here;
@@ -566,6 +588,7 @@ export class City {
     this.hoverBox.visible = !!hovered && hovered !== this.selected;
     if (hovered) this.fitBox(this.hoverBox, hovered);
     this.selectBox.material.opacity = 0.6 + 0.4 * Math.sin(t * 3) ** 2;
+    if (this.hall.it && this.selectBox.visible) { const b = this.hall.bounds(this.hall.it); this.selectBox.position.set(b.cx, 0, b.cz); this.selectBox.scale.set(b.w, b.h, b.d); }
 
     this.you.position.set(e.controls.target.x, 0.4 + 0.1 * Math.sin(t * 2), e.controls.target.z);
     this.visitors.update(t, dt);
@@ -592,7 +615,8 @@ export class City {
       if (!it.drawn) it.form.rotation.y += dt * 0.08;
       // The exhibition plays while you are near; the one you stand in can be heard.
       const camDist = e.camera.position.distanceTo(it.anchor.position);
-      const far = camDist > 70 && this.selected !== it.plot; // the plot you chose shows in full, even from the map
+      // The plot you chose shows in full, even from the map; in the hall, only the hall.
+      const far = this.hall.it ? this.hall.it !== it : camDist > 150 && this.selected !== it.plot; // the colours show even from high above
       if (far && it.exhibit.group.visible) it.exhibit.sleep(); // heavy models and splats let go when nobody is near
       it.exhibit.group.visible = !far;
       if (!far) {
@@ -605,9 +629,13 @@ export class City {
           const w = this.walker.pos;
           const d = Math.hypot(w.x - it.anchor.position.x, w.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
-          const out = Math.hypot(Math.max(0, Math.abs(w.x - it.plot.cx) - it.plot.w / 2), Math.max(0, Math.abs(w.z - it.plot.cz) - it.plot.d / 2), Math.max(0, w.y - it.plot.h));
+          const b = this.hall.bounds(it);
+          const out = Math.hypot(Math.max(0, Math.abs(w.x - b.cx) - b.w / 2), Math.max(0, Math.abs(w.z - b.cz) - b.d / 2), Math.max(0, w.y - b.h));
           inside = out === 0 || (!!it.inside && out < 1.5);
           it.inside = inside;
+          // Stepped in: the plot grows into the hall around you; walked out: it folds back.
+          if (inside && this.mode === 'walk' && this.hall.it !== it) this.hall.open(it);
+          else if (!inside && this.hall.it === it) this.hall.close();
         } else it.inside = undefined;
         it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside });
       }

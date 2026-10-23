@@ -127,6 +127,7 @@ export default {
   "hint.mapTouch": "Glissez pour vous déplacer · deux doigts pour tourner",
   "hint.map": "Glissez pour vous déplacer · clic droit pour tourner · ZQSD",
   "hint.tour": "Visite des mondes · une touche ou un clic pour reprendre la main",
+  "hall.rejoin": "Vol libre · entre dans la ligne de lumière pour reprendre la visite",
   "loader.error": "Impossible d'ouvrir les mondes :",
   "g.speak": "Dicter",
   "g.noHear": "Votre navigateur n'a pas pu vous entendre.",

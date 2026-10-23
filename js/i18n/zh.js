@@ -127,6 +127,7 @@ export default {
   "hint.mapTouch": "拖动平移 · 双指旋转",
   "hint.map": "拖动平移 · 右键拖动旋转 · WASD",
   "hint.tour": "正在导览各个世界 · 按任意键或点击即可自己操控",
+  "hall.rejoin": "自由飞行 · 飞进那条光线，即可继续导览",
   "loader.error": "无法打开这些世界：",
   "g.speak": "说话",
   "g.noHear": "浏览器没能听到你的声音。",

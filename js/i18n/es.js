@@ -127,6 +127,7 @@ export default {
   "hint.mapTouch": "Arrastra para desplazarte · dos dedos para girar",
   "hint.map": "Arrastra para desplazarte · arrastra con el botón derecho para girar · WASD",
   "hint.tour": "Recorriendo los mundos · pulsa una tecla o haz clic para tomar el control",
+  "hall.rejoin": "Vuelas libre · entra en la línea de luz para seguir la visita",
   "loader.error": "No se pudieron abrir los mundos:",
   "g.speak": "Dictar",
   "g.noHear": "Tu navegador no pudo oírte.",

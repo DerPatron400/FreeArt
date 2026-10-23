@@ -117,6 +117,7 @@ export class Walker {
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.active) return;
       if (this.mode === 'tour') { this.stopTour(); return; }
+      this.city.hall?.pause(); // touching the view takes over from the guide in a plot
       // On touch screens the left half is a joystick, the right half turns the view.
       if (coarse && e.clientX < window.innerWidth * 0.45) {
         Object.assign(this.joy, { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 });
@@ -282,11 +283,11 @@ export class Walker {
     want.y = u * 4;
     this.vel.lerp(want, damp(want.lengthSq() ? 4 : 3, dt));
 
-    const lim = this.geo.EXTENT + 6;
+    const lim = this.geo.EXTENT + 6, r = this.reach; // reach: wider bounds while in a grown plot
     this.pos.addScaledVector(this.vel, dt);
-    this.pos.x = clamp(this.pos.x, -lim, lim);
-    this.pos.z = clamp(this.pos.z, -lim, lim);
-    this.pos.y = clamp(this.pos.y, 0.3, 15);
+    this.pos.x = clamp(this.pos.x, Math.min(-lim, r?.x0 ?? -lim), Math.max(lim, r?.x1 ?? lim));
+    this.pos.z = clamp(this.pos.z, Math.min(-lim, r?.z0 ?? -lim), Math.max(lim, r?.z1 ?? lim));
+    this.pos.y = clamp(this.pos.y, 0.3, r?.top ?? 15);
   }
 
   spring(dt) {
@@ -378,7 +379,12 @@ export class Walker {
     if (!this.mesh.visible) return;
     this.uniforms.uTime.value = t;
     if (this.active && !this.engine.flight) {
-      if (this.mode === 'tour') this.tour(dt); else this.walk(dt);
+      if (this.mode === 'tour') this.tour(dt);
+      else {
+        // In a grown plot the guide may be steering; any move of yours takes over.
+        const { f, s, u } = this.input();
+        if (!this.city.hall?.drive(dt, !!(f || s || u))) this.walk(dt);
+      }
     }
     this.spring(dt);
     const speed = this.vel.length();

@@ -127,6 +127,7 @@ export default {
   "hint.mapTouch": "Drag to pan · two fingers to turn",
   "hint.map": "Drag to pan · right-drag to turn · WASD",
   "hint.tour": "Touring the worlds · press any key or click to take control",
+  "hall.rejoin": "Flying free · fly into the line of light to go on with the tour",
   "loader.error": "Could not open the worlds:",
   "g.speak": "Speak",
   "g.noHear": "Your browser could not hear you.",

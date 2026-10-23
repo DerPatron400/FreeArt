@@ -739,7 +739,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
   });
   const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
   const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
-  let revealed = false, nextLoad = 0, ambient = 1;
+  let revealed = false, nextLoad = 0, ambient = 1, preferred = [];
   const sz = roomBox.getSize(new THREE.Vector3()), palReach = Math.max(sz.x, sz.y, sz.z) * 0.32;
   const palLights = (world.palette || []).slice(0, 3).map((hex, i) => {
     const at = [[-0.28, 0.22, 0.2], [0.3, 0.55, -0.22], [-0.05, 0.85, 0.05]][i];
@@ -827,6 +827,14 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       return best && result(best);
     },
     // Keep one piece where it is (while someone looks at it closely), or let it move again.
+    // Where each piece stands now (in world space), how big it is there, and what it is:
+    // for a guided tour through the plot.
+    spots() {
+      const k = group.getWorldScale(ws).x;
+      return pieces.map((p) => ({ index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid }));
+    },
+    // These pieces load before the others (the one a tour shows now, and the next).
+    prefer(list) { preferred = list; },
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
@@ -913,7 +921,8 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       // a crowd of loads starting in the same frame.
       if (want.length) {
         for (const p of want) if (p.piece.lazy.loaded) p.piece.lazy.load(); // keep what is already coming
-        const next = want.filter((p) => !p.piece.lazy.loaded).sort((a, b) => b.nearView - a.nearView)[0];
+        const rank = (p) => (preferred.includes(p.index) ? 10 - preferred.indexOf(p.index) : 0) + p.nearView;
+        const next = want.filter((p) => !p.piece.lazy.loaded).sort((a, b) => rank(b) - rank(a))[0];
         if (next && (all || t >= nextLoad)) { next.piece.lazy.load(); nextLoad = t + STAGGER; }
       }
       if (!haze) return;
