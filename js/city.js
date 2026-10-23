@@ -2,7 +2,7 @@
 // plot and stands in it; empty plots wait for a maker, human or machine.
 import * as THREE from 'three';
 import { createForm, disposeForm } from './form.js';
-import { roman, el, lerp, clamp, rng } from './util.js';
+import { el, lerp, clamp, rng } from './util.js';
 import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createOcean } from './ocean.js';
@@ -21,6 +21,7 @@ const NATURE = { human: t('nat.human'), machine: t('nat.machine'), together: t('
 // and the central block is the piazza, crossed by the two grand avenues.
 const GROUPS = [[-5, -4, -3], [-2, -1], [0], [1, 2], [3, 4, 5]];
 const STREET = 3.4;   // kerb to kerb
+const LINE = 0x8e94b8; // the city's lines: a cool grey-blue, between the paper white and the accent
 const WALK = 0.45;    // pavement between kerb and facades
 const GAP = 0.16;     // between neighbouring buildings
 const FLOOR = 0.62;   // one storey
@@ -180,7 +181,7 @@ export class City {
 
   buildStatic() {
     // Every plot as a faint wireframe volume.
-    this.boxes = lines([], 0x8f8677, 0.22);
+    this.boxes = lines([], LINE, 0.22);
     this.group.add(this.boxes);
 
     this.buildStreets();
@@ -200,13 +201,23 @@ export class City {
     // Hover and selection outlines.
     const edge = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
     edge.translate(0, 0.5, 0);
-    this.hoverBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0xe8ebff, transparent: true, opacity: 0.9 }));
+    // Hovered, a plot takes the chosen look (blue edges, a blue floor) and a faint blue glow
+    // inside, all eased in and out together (see update).
+    const blueFloor = (opacity) => {
+      const f = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+        new THREE.MeshBasicMaterial({ color: 0x3e54e1, transparent: true, opacity, depthWrite: false }));
+      f.position.y = 0.005;
+      return f;
+    };
+    this.hoverBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 0 }));
+    this.hoverFloor = blueFloor(0);
+    this.hoverGlowBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0),
+      new THREE.MeshBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    this.hoverBox.add(this.hoverFloor, this.hoverGlowBox);
     this.selectBox = new THREE.LineSegments(edge, new THREE.LineBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 1 }));
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ color: 0x3e54e1, transparent: true, opacity: 0.06, depthWrite: false }));
-    floor.position.y = 0.005;
-    this.selectBox.add(floor);
+    this.selectBox.add(blueFloor(0.06));
     this.hoverBox.visible = this.selectBox.visible = false;
+    this.hoverOn = null; this.hoverGlow = 0; // the plot the hover outline is on, and how lit it is
     this.group.add(this.hoverBox, this.selectBox);
 
     // Where you stand in map mode.
@@ -247,7 +258,7 @@ export class City {
       const x = lerp(px0 + inset, px1 - inset, i / n), z = lerp(pz0 + inset, pz1 - inset, i / n);
       marks.push(x, 0, pz0 + inset, x, 0, pz1 - inset, px0 + inset, 0, z, px1 - inset, 0, z);
     }
-    this.streetLines = [lines(kerbs, 0x8f8677, 0.2), lines(marks, 0x8f8677, 0.09)];
+    this.streetLines = [lines(kerbs, LINE, 0.2), lines(marks, LINE, 0.09)];
     for (const l of this.streetLines) l.userData.opacity = l.material.opacity;
     this.group.add(...this.streetLines);
 
@@ -263,7 +274,7 @@ export class City {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     g.setAttribute('run', new THREE.Float32BufferAttribute(run, 1));
-    this.laneUniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(0x8f8677) }, uFade: { value: 1 } };
+    this.laneUniforms = { uTime: { value: 0 }, uColor: { value: new THREE.Color(LINE) }, uFade: { value: 1 } };
     this.lanes = new THREE.LineSegments(g, new THREE.ShaderMaterial({
       uniforms: this.laneUniforms, transparent: true, depthWrite: false,
       vertexShader: 'attribute float run; varying float vRun; void main(){ vRun = run; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -336,8 +347,9 @@ export class City {
       this.group.add(anchor);
 
       const label = el('button', 'label');
-      label.append(el('span', 'label__num mono', t('plot.n', { n: roman(p.n) })), el('span', 'label__title', world.title),
-        el('span', 'label__by mono', `${world.creator.name} · ${NATURE[world.creator.nature]}`));
+      const by = el('span', 'label__by mono');
+      by.append(el('span', null, world.creator.name), Object.assign(document.createElement('img'), { src: 'img/dot.svg', width: 2, height: 2, alt: '' }), el('span', null, NATURE[world.creator.nature]));
+      label.append(el('span', 'label__num mono', t('plot.n', { n: p.n })), el('span', 'label__title', world.title), by);
       label.addEventListener('click', () => this.select(p));
       label.addEventListener('dblclick', () => this.enter(it));
       label.addEventListener('pointerenter', () => { this.labelHover = p; });
@@ -604,8 +616,20 @@ export class City {
       this.hovered = hovered;
       document.body.style.cursor = hovered ? 'pointer' : '';
     }
-    this.hoverBox.visible = !!hovered && hovered !== this.selected;
-    if (hovered) this.fitBox(this.hoverBox, hovered);
+    // The hover outline fades in and out evenly (a quarter second); moving to another plot it
+    // fades from one to the next.
+    const want = hovered && hovered !== this.selected ? hovered : null;
+    if (want && this.hoverOn !== want && this.hoverGlow < 0.02) this.hoverOn = want;
+    const aim = want && this.hoverOn === want ? 1 : 0;
+    this.hoverGlow = aim ? Math.min(1, this.hoverGlow + dt * 4) : Math.max(0, this.hoverGlow - dt * 5);
+    if (!want && this.hoverGlow < 0.01) this.hoverOn = null;
+    if (this.hoverOn) this.fitBox(this.hoverBox, this.hoverOn);
+    const glow = this.hoverGlow;
+    this.hoverBox.visible = !!this.hoverOn && glow > 0.01;
+    const lit = glow;
+    this.hoverBox.material.opacity = lit;
+    this.hoverFloor.material.opacity = 0.06 * lit;
+    this.hoverGlowBox.material.opacity = 0.012 * lit; // front and back walls add up: kept faint
     this.selectBox.material.opacity = 0.6 + 0.4 * Math.sin(t * 3) ** 2;
     if (this.hall.it && this.selectBox.visible) { const b = this.hall.bounds(this.hall.it); this.selectBox.position.set(b.cx, 0, b.cz); this.selectBox.scale.set(b.w, b.h, b.d); }
 
@@ -661,12 +685,13 @@ export class City {
       }
 
       if (it.label.hidden) continue;
-      const pos = it.anchor.position.clone().add(new THREE.Vector3(-it.plot.w / 2, it.plot.h + 0.4, 0));
+      // The label stands clear above the box: its foot a little over the plot's top corner.
+      const pos = it.anchor.position.clone().add(new THREE.Vector3(-it.plot.w / 2, it.plot.h, 0));
       const s = e.project(pos, it.screen);
       const dist = e.camera.position.distanceTo(it.anchor.position);
       const near = dist < 48 || isHover || this.selected === it.plot;
       const scale = Math.max(0.6, Math.min(1, 20 / dist));
-      it.label.style.transform = `translate(${s.x}px, ${s.y}px) translateY(-50%) scale(${scale})`;
+      it.label.style.transform = `translate(${s.x}px, ${s.y}px) translateY(calc(-100% - 28px)) scale(${scale})`;
       it.label.style.visibility = s.visible && near ? 'visible' : 'hidden';
       it.label.classList.toggle('is-hover', !!isHover);
       it.label.style.opacity = hovered && !isHover ? 0.4 : Math.min(1, (60 - dist) / 20);

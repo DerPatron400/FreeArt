@@ -104,15 +104,14 @@
 
   <!-- Threshold -->
   <section id="loader" class="loader">
-    <div class="loader__inner">
-      <p class="mono loader__kicker" data-i18n="loader.kicker">A humanist movement · MMXXVI</p>
-      <h1 class="loader__title"><svg class="logo" viewBox="0 0 2000 397.454" role="img" aria-label="Khora"><path fill="currentColor" d="M55.201,121.444L336.73049,5.52051v55.202L55.201,176.646v41.40275l281.52949,115.9225v57.96225L55.201,276.01099v115.9225H0V5.52051h55.201v115.9235ZM692.66792,162.84575h-248.40849V5.52051h-55.203v386.41298h55.203v-179.40524h248.40849v179.40524h55.201V5.52051h-55.201v157.32524ZM1181.50064,198.728c0,109.85095-83.35455,198.72599-198.72599,198.72599s-198.72799-88.87505-198.72799-198.72599S867.4012,0,982.77464,0s198.72599,88.87505,198.72599,198.72799ZM980.93431,52.45199c-73.98367.81847-133.60519,60.13027-138.51324,133.95559-5.9847,90.01995,53.76285,159.57075,142.19004,158.59456,73.98442-.81684,133.60756-60.12889,138.51512-133.95484,5.98408-90.0217-53.76522-159.57375-142.19191-158.59531ZM2000,391.93349h-60.72349l-53.54585-121.443h-204.24649l-52.9928,121.443h-95.32345l-208.17723-187.68499h-52.11132v187.68499h-55.201V5.52051h259.44849c54.87731,0,99.36399,44.48669,99.36399,99.36387v.00025c0,54.87718-44.48669,99.36387-99.36399,99.36387h-72.21721l177.57589,160.15412L1738.34231,5.52051h92.18735l169.47034,386.41298ZM1471.60637,154.565c27.43828,0,49.6815-22.24309,49.6815-49.6815s-22.24322-49.6815-49.6815-49.6815h-198.72699v99.363h198.72699ZM1864.20171,220.808l-72.8666-165.60599h-16.5595l-71.7625,165.60599h161.18859Z"/></svg></h1>
-      <p class="loader__line" data-i18n="loader.line">Every mind inhabits a world of its own: years of quiet attention spent on details others never notice. Here, those worlds are given form.</p>
-      <div class="loader__progress mono"><span id="loader-pct">0</span>%</div>
-      <div class="loader__enter" id="loader-enter" hidden>
-        <button class="btn btn--primary" data-enter="sound" data-i18n="loader.enter">Enter</button>
-        <button class="btn btn--ghost" data-enter="silent" data-i18n="loader.silent">Enter without sound</button>
-      </div>
+    <p class="mono loader__kicker" data-i18n="loader.kicker">A humanist movement
+MMXXVI</p>
+    <h1 class="loader__title"><span class="sr-only">Khora</span><img class="loader__logo" src="img/logo-intro.svg" width="912" height="180" alt=""></h1>
+    <p class="loader__line sr-only" data-i18n="loader.line">Every mind inhabits a world of its own: years of quiet attention spent on details others never notice. Here, those worlds are given form.</p>
+    <div class="loader__progress mono" data-no-scramble><span id="loader-pct">0</span>%</div>
+    <div class="loader__enter" id="loader-enter" hidden>
+      <button class="btn btn--primary" data-enter="sound" data-i18n="loader.enter">Enter</button>
+      <button class="btn btn--ghost" data-enter="silent" data-i18n="loader.silent">Enter without sound</button>
     </div>
   </section>
 
@@ -122,7 +121,10 @@
     <nav class="nav mono">
       <a href="#/" data-nav="city" data-i18n="nav.city">Home</a>
       <a href="#/manifesto" data-nav="manifesto" data-i18n="nav.manifesto">Manifesto</a>
-      <label class="lang"><select class="lang-select mono" id="lang-select" data-i18n-aria="lang.label"></select><img src="img/chevron.svg" width="8" height="4" alt=""></label>
+      <div class="lang" id="lang">
+        <button class="lang__toggle mono" id="lang-toggle" type="button" aria-haspopup="listbox" aria-expanded="false" data-i18n-aria="lang.label"><span id="lang-code">EN</span><img src="img/chevron.svg" width="8" height="4" alt=""></button>
+        <ul class="lang__menu" id="lang-menu" role="listbox" hidden></ul>
+      </div>
       <button class="sound-toggle mono" id="sound-toggle" aria-label="Toggle sound" data-i18n-aria="nav.sound"><span data-i18n="nav.soundLabel">Sound</span><span class="bars"><i></i><i></i><i></i><i></i><i></i></span></button>
       <a class="btn btn--primary nav__claim" href="#/create" data-nav="create" data-i18n="nav.create">Claim a lot</a>
     </nav>

@@ -1,6 +1,6 @@
 // English: the base every other language falls back to.
 export default {
-  "loader.kicker": "A humanist movement · MMXXVI",
+  "loader.kicker": "A humanist movement\nMMXXVI",
   "loader.line": "Every mind inhabits a world of its own: years of quiet attention spent on details others never notice. Here, those worlds are given form.",
   "loader.enter": "Enter",
   "loader.silent": "Enter without sound",
@@ -94,7 +94,7 @@ export default {
   "key.mailSubject": "My Khora world",
   "key.mailBody": "My private edit link for my world in Khora:",
   "ui.done": "Done",
-  "plot.n": "Plot {n}",
+  "plot.n": "Lot {n}",
   "dir.e": "E",
   "dir.w": "W",
   "dir.s": "S",

@@ -1,6 +1,6 @@
 // 简体中文：用“你”，语气亲切、文雅，不逐字翻译。
 export default {
-  "loader.kicker": "一场人文主义运动 · 二〇二六",
+  "loader.kicker": "一场人文主义运动\n二〇二六",
   "loader.line": "每个人心里都住着一个世界：多年静静的专注，落在别人从未留意的细节上。在这里，这些世界有了形状。",
   "loader.enter": "进入",
   "loader.silent": "静音进入",

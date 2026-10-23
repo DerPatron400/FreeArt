@@ -1,6 +1,6 @@
 // Español: escrito para que suene natural tanto en España como en América Latina. Tuteo, cálido y claro.
 export default {
-  "loader.kicker": "Un movimiento humanista · MMXXVI",
+  "loader.kicker": "Un movimiento humanista\nMMXXVI",
   "loader.line": "Cada mente habita un mundo propio: años de atención callada a detalles que nadie más ve. Aquí, esos mundos toman forma.",
   "loader.enter": "Entrar",
   "loader.silent": "Entrar sin sonido",

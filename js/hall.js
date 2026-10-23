@@ -32,7 +32,7 @@ void main() {
   float on = smoothstep(0.0, 0.08, d) * (1.0 - smoothstep(0.4, 0.5, d));
   float a = uOpacity * (0.22 + 0.5 * on) * (0.6 + 0.4 * uNear) * (1.0 - smoothstep(uDraw - 2.0, uDraw, vRun));
   if (a < 0.01) discard;
-  gl_FragColor = vec4(vec3(0.95, 0.93, 0.88) * a, a);
+  gl_FragColor = vec4(vec3(0.91, 0.92, 1.0) * a, a); // the paper white, #e8ebff
 }`;
 
 export class Hall {

@@ -1,6 +1,6 @@
 // Français : pour la France, la Belgique, la Suisse romande et le Québec. Vouvoiement, sobre et chaleureux.
 export default {
-  "loader.kicker": "Un mouvement humaniste · MMXXVI",
+  "loader.kicker": "Un mouvement humaniste\nMMXXVI",
   "loader.line": "Chaque esprit habite un monde à lui : des années d'attention silencieuse portée à des détails que personne d'autre ne remarque. Ici, ces mondes prennent forme.",
   "loader.enter": "Entrer",
   "loader.silent": "Entrer sans le son",

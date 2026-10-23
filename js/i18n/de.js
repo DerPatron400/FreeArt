@@ -1,6 +1,6 @@
 // Deutsch: für Leserinnen und Leser in Deutschland, Österreich und der Schweiz. Du-Form, ruhig und warm.
 export default {
-  "loader.kicker": "Eine humanistische Bewegung · MMXXVI",
+  "loader.kicker": "Eine humanistische Bewegung\nMMXXVI",
   "loader.line": "Jeder Mensch trägt eine eigene Welt in sich: Jahre stiller Aufmerksamkeit für Dinge, die sonst niemand bemerkt. Hier bekommen diese Welten Gestalt.",
   "loader.enter": "Eintreten",
   "loader.silent": "Ohne Ton eintreten",

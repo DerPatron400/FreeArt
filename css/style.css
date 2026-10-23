@@ -49,22 +49,32 @@ button { font: inherit; color: inherit; }
 .btn--ghost:hover { background: rgba(232, 235, 255, 0.16); }
 .btn--small { padding: 7px 12px 8px; min-height: 30px; }
 
-/* Loader */
+/* Loader: the threshold */
 .loader {
-  position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 24px;
-  background: var(--ink); transition: opacity 1.4s var(--ease), visibility 1.4s;
+  position: fixed; inset: 0; z-index: 20; background: #000; color: #f8f9ff; transition: opacity 1.4s var(--ease), visibility 1.4s;
+  --logo-w: min(912px, 86vw); --logo-h: calc(var(--logo-w) * 180 / 912); --gap: calc(var(--logo-h) * 80 / 180);
 }
 .loader.is-gone { opacity: 0; visibility: hidden; }
-.loader__inner { max-width: 620px; text-align: center; }
-.loader__kicker { color: var(--muted); }
-.loader__title { font-weight: 300; font-size: clamp(64px, 12vw, 148px); line-height: 0.9; margin: 0.15em 0 0.25em; letter-spacing: -0.02em; }
+.loader__kicker {
+  position: absolute; left: 50%; bottom: calc(50% + var(--logo-h) / 2 + var(--gap)); transform: translateX(-50%);
+  margin: 0; text-align: center; white-space: pre-line; color: #f8f9ff;
+}
+.loader__title { position: absolute; left: 50%; top: 50%; width: var(--logo-w); height: var(--logo-h); margin: 0; transform: translate(calc(-50% + var(--logo-w) * 8 / 912), -50%); }
 .logo { display: block; height: 1em; width: 5.032em; color: var(--paper); margin: 0 auto; } /* the logo is 2000 x 397.454 */
-.loader__title .logo { height: 0.62em; width: 3.12em; margin: 0.2em auto; }
 .wordmark img { display: block; }
-.loader__line { font-size: clamp(18px, 2.2vw, 22px); line-height: 1.45; color: rgba(232, 235, 255, 0.75);  margin: 0 auto 2.5em; max-width: 30em; }
-.loader__progress { color: var(--muted); }
-.loader__enter { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; animation: rise 1.2s var(--ease) both; }
+.loader__logo { display: block; width: 100%; height: auto; }
+.loader__progress { position: absolute; left: 50%; bottom: 32px; transform: translateX(-50%); margin: 0; color: #f8f9ff; opacity: 0; } /* only says something when loading fails */
+.loader.is-error .loader__progress { opacity: 0.7; }
+.loader__enter {
+  position: absolute; left: 50%; top: calc(50% + var(--logo-h) / 2 + var(--gap)); transform: translateX(-50%);
+  display: flex; gap: 8px; animation: rise-centred 1.2s var(--ease) both;
+}
+.loader__enter .btn { height: 42px; padding: 0 18px; white-space: nowrap; }
+.loader__enter .btn--primary { background: var(--gold); color: #f8f9ff; }
+.loader__enter .btn--ghost { background: rgba(248, 249, 255, 0.1); color: rgba(248, 249, 255, 0.7); }
+.loader__enter .btn--ghost:hover { background: rgba(248, 249, 255, 0.16); color: #f8f9ff; }
 @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+@keyframes rise-centred { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* Chrome */
 .chrome {
@@ -74,11 +84,22 @@ button { font: inherit; color: inherit; }
 .chrome > * { pointer-events: auto; }
 .wordmark { display: block; text-decoration: none; }
 .nav { display: flex; gap: 32px; align-items: center; height: 32px; }
-.nav > a:not(.btn), .lang, .sound-toggle { text-decoration: none; color: var(--paper); opacity: 0.5; transition: opacity 0.3s; }
-.nav > a:not(.btn):hover, .nav > a.is-active:not(.btn), .lang:hover, .sound-toggle:hover { opacity: 1; }
+.nav > a:not(.btn), .lang__toggle, .sound-toggle { text-decoration: none; color: var(--paper); opacity: 0.5; transition: opacity 0.3s; }
+.nav > a:not(.btn):hover, .nav > a.is-active:not(.btn), .lang__toggle:hover, .lang.is-open .lang__toggle, .sound-toggle:hover { opacity: 1; }
 .nav__claim.is-active { background: #5468ec; }
-.lang { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.lang img { display: block; width: 8px; height: 4px; pointer-events: none; }
+.lang { position: relative; display: inline-flex; }
+.lang__toggle { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; cursor: pointer; }
+.lang__toggle img { display: block; width: 8px; height: 4px; pointer-events: none; transition: transform 0.3s var(--ease); }
+.lang.is-open .lang__toggle img { transform: rotate(180deg); }
+/* The menu hangs under the code, centred on it, from the foot of the nav row. */
+.lang__menu {
+  position: absolute; top: calc(100% + 8.5px); left: 50%; transform: translateX(-50%); margin: 0; padding: 16px 20px; list-style: none;
+  display: flex; flex-direction: column; align-items: center; gap: 24px; border-radius: 4px;
+  background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+}
+.lang__menu button { display: inline-flex; align-items: center; gap: 6px; padding: 0; background: none; border: 0; color: var(--paper); cursor: pointer; opacity: 0.5; transition: opacity 0.3s; }
+.lang__menu button:hover, .lang__menu button:focus-visible, .lang__menu [aria-selected="true"] button { opacity: 1; }
+.lang__menu img { display: block; width: 3px; height: 3px; }
 .sound-toggle { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; cursor: pointer; padding: 0; color: var(--paper); }
 .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 13px; padding: 2px; box-sizing: border-box; }
 .bars i { width: 1px; height: 2px; background: var(--paper); transform-origin: 50% 100%; transition: height 0.4s var(--ease); } /* off: five flat bars */
@@ -91,13 +112,16 @@ button { font: inherit; color: inherit; }
 .labels { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
 .label {
   position: absolute; left: 0; top: 0; pointer-events: auto; cursor: pointer; white-space: nowrap;
-  transform-origin: 0 50%; transition: opacity 0.6s var(--ease); background: none; border: 0; padding: 0; text-align: left;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  transform-origin: 0 100%; transition: opacity 0.6s var(--ease); background: none; border: 0; padding: 0; text-align: left; color: var(--paper);
 }
-.label__num { display: block; color: var(--muted); }
-.label__title { display: block; font-size: 24px;  font-weight: 300; line-height: 1.1; }
-.label__by { display: block; color: var(--muted); margin-top: 4px; }
-.label::before { content: ""; position: absolute; left: -18px; top: 50%; width: 10px; height: 1px; background: var(--faint); }
-.label.is-hover .label__title { color: var(--paper); }
+.label__num, .label__by { font-size: 11px; letter-spacing: 0.22px; line-height: 13px; color: #f8f9ff; padding-left: 2px; }
+.label__num { opacity: 0.5; }
+.label__title { font: 300 22px/normal var(--serif); color: var(--paper); transition: color 0.4s var(--ease); }
+.label__by { display: flex; align-items: center; gap: 8px; }
+.label__by span { opacity: 0.5; }
+.label__by img { display: block; width: 2px; height: 2px; }
+.label.is-hover .label__title { color: #f8f9ff; }
 .label--fragment .label__title { font-size: 17px; }
 .label--fragment.is-open .label__title { color: var(--paper); }
 .label.is-behind { opacity: 0.25; }
@@ -129,8 +153,6 @@ body:not([data-view="city"]) .move-help, body:not([data-view="city"]) .move-pad,
 .move-pad button { width: 58px; height: 58px; border-radius: 6px; border: 0; background: var(--panel-2); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); color: var(--paper); font-size: 20px; touch-action: none; -webkit-user-select: none; user-select: none; }
 .move-pad button:active { background: rgba(232, 235, 255, 0.18); }
 .is-manifesto .move-help, .is-manifesto .move-pad { visibility: hidden; }
-.lang-select { appearance: none; -webkit-appearance: none; background: none; border: 0; color: var(--paper); padding: 0; margin: 0; cursor: pointer; outline: none; }
-.lang-select option { background: var(--ink); color: var(--paper); }
 /* Chinese and Japanese: their own type, no faux italics or wide uppercase tracking. */
 :root:lang(zh) { --serif: "Geist", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif; }
 :root:lang(ja) { --serif: "Geist", "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif; }

@@ -1,6 +1,6 @@
 // Italiano: per chi legge in Italia e in Svizzera italiana. Del Rinascimento qui si parla in casa, con il tu.
 export default {
-  "loader.kicker": "Un movimento umanista · MMXXVI",
+  "loader.kicker": "Un movimento umanista\nMMXXVI",
   "loader.line": "Ogni mente abita un mondo tutto suo: anni di attenzione silenziosa per dettagli che nessun altro nota. Qui quei mondi prendono forma.",
   "loader.enter": "Entra",
   "loader.silent": "Entra senza audio",

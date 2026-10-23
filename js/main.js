@@ -1,5 +1,6 @@
 // Khora: routing between the threshold, the city, a world, and the workshop.
 import { Engine } from './engine.js';
+import { startScramble } from './scramble.js';
 import { City, plotNumber, plotCell } from './city.js';
 import { WorldView } from './worldview.js';
 import { useEngine, exhibitItems } from './exhibit.js';
@@ -16,15 +17,32 @@ const $ = (id) => document.getElementById(id);
 const NATURE = { human: t('made.human'), machine: t('made.machine'), together: t('made.together') };
 
 translatePage();
-// The language switch: each language named in itself.
-for (const l of LANGS) {
-  const o = el('option', null, l.code.toUpperCase());
-  o.value = l.code;
-  o.title = l.name;
-  o.selected = l.code === lang;
-  $('lang-select').append(o);
+startScramble(); // the mono texts type themselves in, and again on hover
+// The language switch: the chosen code, and under it a small menu of the others.
+{
+  const box = $('lang'), toggle = $('lang-toggle'), menu = $('lang-menu');
+  $('lang-code').textContent = lang.toUpperCase();
+  for (const l of [...LANGS.filter((x) => x.code === lang), ...LANGS.filter((x) => x.code !== lang)]) {
+    const item = el('li');
+    item.setAttribute('role', 'option');
+    item.setAttribute('aria-selected', String(l.code === lang));
+    const b = el('button', 'mono', l.code.toUpperCase());
+    b.type = 'button';
+    b.title = l.name;
+    if (l.code === lang) b.append(Object.assign(document.createElement('img'), { src: 'img/lang-dot.svg', width: 3, height: 3, alt: '' }));
+    b.addEventListener('click', () => { open(false); if (l.code !== lang) setLang(l.code); });
+    item.append(b);
+    menu.append(item);
+  }
+  const open = (on) => {
+    menu.hidden = !on;
+    box.classList.toggle('is-open', on);
+    toggle.setAttribute('aria-expanded', String(on));
+  };
+  toggle.addEventListener('click', () => open(menu.hidden));
+  document.addEventListener('pointerdown', (e) => { if (!menu.hidden && !box.contains(e.target)) open(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) { open(false); toggle.focus(); } });
 }
-$('lang-select').addEventListener('change', (e) => setLang(e.target.value));
 
 const engine = new Engine($('stage'));
 useEngine(engine); // splats draw through the same renderer
@@ -430,5 +448,6 @@ document.querySelectorAll('[data-enter]').forEach((b) => b.addEventListener('cli
 
 boot().catch((e) => {
   console.error(e);
-  $('loader-pct').textContent = t('loader.error') + ' ' + e.message;
+  $('loader').classList.add('is-error');
+  $('loader-pct').parentElement.textContent = t('loader.error') + ' ' + e.message;
 });
