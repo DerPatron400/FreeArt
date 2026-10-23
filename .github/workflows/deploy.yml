@@ -1,0 +1,44 @@
+# Every push to main goes live on Cloudflare Pages (project "freeart").
+# Needs two repository secrets: CLOUDFLARE_API_TOKEN (Cloudflare Pages: Edit) and
+# CLOUDFLARE_ACCOUNT_ID. Only the site's files are published; the server code in
+# functions/ is compiled by wrangler and never served as a file.
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lay out the site
+        run: |
+          mkdir -p dist/public
+          rsync -a ./ dist/public/ \
+            --exclude .git --exclude .github --exclude dist --exclude functions \
+            --exclude 'wrangler*' --exclude schema/server.sql --exclude start.bat \
+            --exclude .gitignore --exclude node_modules --exclude .wrangler --exclude .claude
+          cp -r functions dist/functions
+          sed 's/^pages_build_output_dir = .*/pages_build_output_dir = "public"/' wrangler.toml > dist/wrangler.toml
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Deploy
+        working-directory: dist
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: npx --yes wrangler@4 pages deploy --project-name freeart --branch main --commit-hash "$GITHUB_SHA" --commit-message "$(printf '%s' "${COMMIT_MSG:-manual deploy}" | head -n 1)"
