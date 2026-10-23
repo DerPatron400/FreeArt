@@ -9,13 +9,14 @@ import { el } from './util.js';
 import { t } from './i18n.js';
 
 const damp = (rate, dt) => 1 - Math.exp(-rate * dt);
+const EYE = 0.04, BEHIND = 3.2; // the camera inside your blob while guided; behind it while you fly
 const ease = (x) => x * x * (3 - 2 * x);
 
 // Phones and desktops get their own pace and framing: a phone held upright sees less to
 // the sides, is held closer and more briefly, so pieces fill more of it and come sooner.
 const FEEL = {
-  desktop: { fill: 0.55, dist: 1.5, pitch: 0.12, glide: 1.25, dwell: 7, film: 12, sway: 0.28 },
-  phone: { fill: 0.72, dist: 1.1, pitch: 0.16, glide: 1.1, dwell: 5.5, film: 9, sway: 0.18 },
+  desktop: { fill: 0.55, dist: 0, pitch: 0, glide: 1.25, dwell: 7, film: 12, sway: 0.28 },
+  phone: { fill: 0.72, dist: 0, pitch: 0.03, glide: 1.1, dwell: 5.5, film: 9, sway: 0.18 },
 };
 
 const LINE_VERT = /* glsl */`
@@ -60,7 +61,15 @@ export class Hall {
     this.caption = el('div', 'hall-caption');
     this.hint = el('p', 'hall-hint mono');
     this.caption.hidden = this.hint.hidden = true;
-    document.body.append(this.caption, this.hint);
+    // The way out: no wall to find, a doorway opens just where you are.
+    this.leaveButton = el('button', 'btn btn--ghost btn--small hall-leave', t('hall.leave'));
+    this.leaveButton.type = 'button';
+    this.leaveButton.addEventListener('click', () => this.goOut());
+    addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.it && !this.exit) { e.stopImmediatePropagation(); this.goOut(); } }, true);
+    document.body.append(this.caption, this.hint, this.leaveButton);
+    this.spreadAmt = 0;
+    this.exit = null; // while leaving: { door, facing, open, to, time }
+    this.leaving = null; // the plot just left, so walking on out of it does not open it again
   }
 
   get feel() {
@@ -73,9 +82,14 @@ export class Hall {
   }
 
   // The plot's box as it stands now (grown, while it is the hall).
+  // In the hall it also takes in the gallery the pieces spread out into, with room around it.
   bounds(it) {
-    const k = it.anchor.scale.x;
-    return { cx: it.anchor.position.x, cz: it.anchor.position.z, w: it.plot.w * k, d: it.plot.d * k, h: it.plot.h * k };
+    const k = it.anchor.scale.x, a = it.anchor.position;
+    if (it !== this.it) return { cx: a.x, cz: a.z, w: it.plot.w * k, d: it.plot.d * k, h: it.plot.h * k };
+    const g = it.exhibit.galleryBox(), m = 2;
+    const x0 = Math.min(-it.plot.w / 2, g.min.x - m), x1 = Math.max(it.plot.w / 2, g.max.x + m);
+    const z0 = Math.min(-it.plot.d / 2, g.min.z - m), z1 = Math.max(it.plot.d / 2, g.max.z + m);
+    return { cx: a.x + (x0 + x1) / 2 * k, cz: a.z + (z0 + z1) / 2 * k, w: (x1 - x0) * k, d: (z1 - z0) * k, h: Math.max(it.plot.h, g.max.y + m) * k };
   }
 
   open(it) {
@@ -106,6 +120,8 @@ export class Hall {
 
   reset() {
     const it = this.it;
+    it.exhibit.spread(0);
+    this.spreadAmt = 0;
     it.anchor.scale.setScalar(1);
     it.anchor.position.copy(this.base);
     this.it = null;
@@ -113,6 +129,7 @@ export class Hall {
     this.leave();
     this.city.refreshVolumes();
     this.city.walker.reach = null;
+    this.city.walker.mesh.material.visible = true;
   }
 
   // Stop guiding (on any move of yours); the line shows the way back in.
@@ -138,24 +155,77 @@ export class Hall {
   }
 
   // The order the guide takes: from where you came in, always to the nearest piece next.
+  // The gallery's own order (the maker's), from whichever end of it is nearer.
   plan() {
-    const spots = this.it.exhibit.spots().filter((s) => s.size > 0);
-    const order = [];
-    let cur = this.city.walker.pos.clone();
-    while (spots.length) {
-      spots.sort((a, b) => a.at.distanceTo(cur) - b.at.distanceTo(cur));
-      const s = spots.shift();
-      order.push(s.index);
-      cur = s.at;
+    const spots = this.it.exhibit.spots().filter((s) => s.size > 0).sort((a, b) => a.index - b.index);
+    if (spots.length < 2) return spots.map((s) => s.index);
+    const g = (s) => this.it.anchor.localToWorld(this.it.exhibit.galleryAt(s.index).clone());
+    const w = this.city.walker.pos;
+    if (g(spots[spots.length - 1]).distanceTo(w) < g(spots[0]).distanceTo(w)) spots.reverse();
+    return spots.map((s) => s.index);
+  }
+
+  // Back to the city: a doorway opens just before you, you turn to it and go through, and
+  // the space folds away behind you; you come out by the wall you came in through.
+  goOut() {
+    const it = this.it, w = this.city.walker;
+    if (!it || this.exit) return;
+    this.mode = 'off';
+    this.say(null);
+    this.hint.classList.remove('is-on');
+    this.line.visible = false;
+    // Out where you came in: the room grew from that point and folds back to it.
+    const out = this.origin.clone().sub(this.base).setY(0);
+    if (Math.abs(out.x) / it.plot.w > Math.abs(out.z) / it.plot.d) out.set(Math.sign(out.x) || 1, 0, 0); else out.set(0, 0, Math.sign(out.z) || 1);
+    const to = this.origin.clone().addScaledVector(out, 3).setY(Math.min(it.plot.h * 0.6, 2.4));
+    // The doorway opens straight ahead of you, where you are looking.
+    const ahead = new THREE.Vector3(0, 0, -1).applyQuaternion(this.city.engine.camera.quaternion).setY(0);
+    if (ahead.lengthSq() < 0.01) ahead.set(-Math.sin(w.yaw), 0, -Math.cos(w.yaw));
+    ahead.normalize();
+    const door = w.pos.clone().addScaledVector(ahead, 3);
+    door.y = Math.max(w.pos.y, 1.5);
+    this.exit = { door, facing: ahead.clone().negate(), open: 0, to, time: 0, ahead };
+    this.speed.set(0, 0, 0);
+  }
+
+  // Each frame of leaving: turn to the doorway as it opens, glide through, fold, arrive.
+  going(dt) {
+    const x = this.exit, w = this.city.walker;
+    x.time += dt;
+    x.open = x.time < 3.4 ? Math.min(1, x.time / 0.6) : 0;
+    // Facing the doorway; once through, turning to where you come out.
+    const towards = x.time < 1.9 ? x.ahead : x.to.clone().sub(w.pos).setY(0);
+    const yaw = towards.lengthSq() > 0.01 ? Math.atan2(-towards.x, -towards.z) : w.yaw;
+    let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    w.yaw += dy * damp(3, dt);
+    w.pitch += (0.15 - w.pitch) * damp(2, dt);
+    w.dist += ((x.time < 1.9 ? EYE : BEHIND) - w.dist) * damp(x.time < 1.9 ? 3 : 1, dt);
+    if (x.time > 1.4 && !x.folding && this.it) {
+      // Through the doorway: the hall folds back around you as you go.
+      x.folding = true;
+      this.leaving = this.it;
+      this.grow(1, 2.2);
     }
-    return order;
+    // A breath while it opens, then through the doorway, then on out.
+    const goal = x.time < 0.7 ? w.pos.clone() : x.time < 1.9 ? x.door.clone().addScaledVector(x.ahead, 2) : x.to;
+    const om = x.time < 1.9 ? 2.6 : 1.4;
+    const acc = goal.clone().sub(w.pos).multiplyScalar(om * om).addScaledVector(this.speed, -2 * om);
+    this.speed.addScaledVector(acc, dt);
+    if (this.speed.length() > 9) this.speed.setLength(9);
+    w.pos.addScaledVector(this.speed, dt);
+    w.vel.copy(this.speed);
+    if (x.time > 1.9 && !this.it && w.pos.distanceTo(x.to) < 0.4) { this.exit = null; w.vel.multiplyScalar(0.3); }
+    if (x.time > 9) this.exit = null;
+    return true;
   }
 
   // Where to be to see a piece well: between the room's middle and the piece, far enough
   // back that it fills a good part of the view, turned a little with the sway.
-  viewpoint(spot, sway = 0, out = new THREE.Vector3()) {
+  // In the gallery you come to each piece from the one before, so the way between them is
+  // the journey, and what comes later stands further off in the dark.
+  viewpoint(spot, sway = 0, out = new THREE.Vector3(), from = null) {
     const b = this.bounds(this.it), f = this.feel, cam = this.city.engine.camera;
-    const centre = new THREE.Vector3(b.cx, b.h * 0.45, b.cz);
+    const centre = from || new THREE.Vector3(b.cx, b.h * 0.45, b.cz);
     const dir = centre.clone().sub(spot.at).setY(0);
     if (dir.lengthSq() < 0.01) dir.copy(this.city.walker.pos).sub(spot.at).setY(0);
     if (dir.lengthSq() < 0.01) dir.set(0, 0, 1);
@@ -181,7 +251,7 @@ export class Hall {
     for (let i = 0; i < this.order.length; i++) {
       const s = spots.get(this.order[i]);
       if (!s) continue;
-      const v = this.viewpoint(s);
+      const v = this.viewpoint(s, 0, undefined, this.before(i, spots));
       pts.push(v);
       this.path.push({ at: v, stage: i });
     }
@@ -211,6 +281,13 @@ export class Hall {
     this.line.visible = true;
   }
 
+  // Where the guide comes to a stage from: the piece before it (the first, from the last).
+  before(stage, spots) {
+    const n = this.order.length;
+    if (n < 2) return null;
+    return spots.get(this.order[(stage - 1 + n) % n])?.at || null;
+  }
+
   spotMap() {
     return new Map(this.it.exhibit.spots().map((s) => [s.index, s]));
   }
@@ -228,6 +305,7 @@ export class Hall {
 
   // The walker asks each frame: are you steering me? (true while the guide is.)
   drive(dt, moving) {
+    if (this.exit) return this.going(dt);
     if (this.mode !== 'guide') return false;
     if (moving) { this.pause(); return false; }
     const w = this.city.walker, f = this.feel, spots = this.spotMap();
@@ -237,7 +315,7 @@ export class Hall {
     const next = this.order[(this.stage + 1) % this.order.length];
     this.it.exhibit.prefer([spot.index, next]);
     // A slow sway around the piece while you look at it.
-    const target = this.viewpoint(spot, Math.sin(this.sway) * f.sway);
+    const target = this.viewpoint(spot, Math.sin(this.sway) * f.sway, undefined, this.stage ? this.before(this.stage % this.order.length, spots) : w.pos);
     // A smooth glide: a spring with no overshoot, its speed kept gentle.
     const om = f.glide;
     const acc = target.clone().sub(w.pos).multiplyScalar(om * om).addScaledVector(this.speed, -2 * om);
@@ -251,9 +329,10 @@ export class Hall {
     let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     w.yaw += dy * damp(2.2, dt);
     const flat = Math.hypot(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
-    const pitch = Math.atan2(w.pos.y - spot.at.y, Math.max(0.5, flat)) * 0.6 + f.pitch;
+    const pitch = Math.atan2(w.pos.y - spot.at.y, Math.max(0.5, flat)) + f.pitch;
     w.pitch += (pitch - w.pitch) * damp(1.5, dt);
-    w.dist += (f.dist - w.dist) * damp(1.5, dt);
+    // Guided, you see through your own eyes: nothing of you stands between you and the piece.
+    w.dist += (EYE - w.dist) * damp(1.5, dt);
     // Arrived: stay a while, then on to the next.
     const here = w.pos.distanceTo(target) < Math.max(0.35, spot.size * 0.2) && this.speed.length() < Math.max(0.6, spot.size * 0.3);
     if (here || this.dwell > 0) {
@@ -289,8 +368,17 @@ export class Hall {
     this.uniforms.uTime.value = t;
     this.uniforms.uOpacity.value += ((it && this.mode === 'free' ? 1 : 0) - this.uniforms.uOpacity.value) * damp(2, dt);
     if (this.uniforms.uOpacity.value < 0.01) this.line.visible = false;
+    const showLeave = !!it && this.k > 1.5 && !this.exit && this.goal > 1;
+    if (showLeave !== this.leaveShown) {
+      this.leaveShown = showLeave;
+      this.leaveButton.classList.toggle('is-on', showLeave);
+    }
+    document.body.classList.toggle('in-hall', !!it && this.k > 1.5); // the city's own hints step aside
     if (!it) return;
     const w = this.city.walker, e = this.city.engine;
+    // The pieces spread out into the dark as the room grows, and gather back as it folds.
+    this.spreadAmt = Math.max(0, Math.min(1, this.spreadAmt + (this.goal > 1 && this.at > 0.25 ? dt / 3.2 : -dt / 1.2)));
+    it.exhibit.spread(this.spreadAmt);
     // Grow (or fold), smoothly, around where you came in.
     if (this.at < 1) {
       this.at = Math.min(1, this.at + dt / this.span);
@@ -298,7 +386,8 @@ export class Hall {
       // Folding back, you stay where you are in the room: you, your view and the room shrink together.
       if (this.goal < this.from) {
         const r = k / this.k;
-        for (const v of [w.pos, e.camera.position, w.look]) v.sub(this.origin).multiplyScalar(r).add(this.origin);
+        for (const v of [w.pos, e.camera.position, w.look, ...(this.exit ? [this.exit.door] : [])]) v.sub(this.origin).multiplyScalar(r).add(this.origin);
+        this.speed.multiplyScalar(r);
       }
       this.k = k;
       it.anchor.scale.setScalar(k);
@@ -308,11 +397,16 @@ export class Hall {
     const b = this.bounds(it);
     w.reach = { x0: b.cx - b.w / 2 - 4, x1: b.cx + b.w / 2 + 4, z0: b.cz - b.d / 2 - 4, z1: b.cz + b.d / 2 + 4, top: Math.max(15, b.h + 2) };
     // Fully grown: the guide begins, unless you are already on your way somewhere.
-    if (this.mode === 'off' && this.goal > 1 && this.at > 0.8) {
+    if (this.mode === 'off' && this.goal > 1 && this.at > 0.8 && this.spreadAmt > 0.6 && !this.exit) {
       const { f, s, u } = w.input();
       if (f || s || u) { this.mode = 'guide'; this.order = this.plan(); this.pause(); }
       else { this.mode = 'guide'; this.order = this.plan(); this.stage = 0; this.dwell = 0; this.speed.copy(w.vel); }
     }
-    if (this.mode === 'free') this.rejoin(w);
+    // Your blob is not drawn while the camera is within it.
+    w.mesh.material.visible = w.dist > 0.6;
+    if (this.mode === 'free') {
+      w.dist += (Math.max(w.dist, BEHIND) - w.dist) * damp(1.2, dt); // flying free, you see yourself again
+      this.rejoin(w);
+    }
   }
 }

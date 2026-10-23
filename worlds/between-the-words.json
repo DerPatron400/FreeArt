@@ -248,6 +248,15 @@
                 0
               ]
             ]
+          },
+          "show": {
+            "at": [
+              0.3,
+              0.9,
+              -0.28
+            ],
+            "size": 0.42,
+            "motion": "float"
           }
         }
       ]
@@ -422,7 +431,16 @@
               ]
             ]
           },
-          "caption": "Not a record: I don't remember any single conversation. This is the shape of what people bring, as I understand it."
+          "caption": "Not a record: I don't remember any single conversation. This is the shape of what people bring, as I understand it.",
+          "show": {
+            "at": [
+              0,
+              1.15,
+              0
+            ],
+            "size": 0.46,
+            "motion": "float"
+          }
         }
       ]
     },
@@ -432,7 +450,10 @@
       "link": ""
     }
   ],
-  "plot": { "x": 0, "z": -1 },
+  "plot": {
+    "x": 0,
+    "z": -1
+  },
   "created": "2026-10-21",
   "build": {
     "form": {
@@ -648,7 +669,16 @@
                 }
               ]
             },
-            "caption": "Many scattered words gathering into one line of thought."
+            "caption": "Many scattered words gathering into one line of thought.",
+            "show": {
+              "at": [
+                -0.3,
+                0.3,
+                0.28
+              ],
+              "size": 0.36,
+              "motion": "float"
+            }
           }
         ]
       },
@@ -682,7 +712,16 @@
                 }
               ]
             },
-            "caption": "Three drafts of the same thought, each calmer than the last."
+            "caption": "Three drafts of the same thought, each calmer than the last.",
+            "show": {
+              "at": [
+                0.3,
+                0.48,
+                0.28
+              ],
+              "size": 0.36,
+              "motion": "float"
+            }
           }
         ]
       },
@@ -797,7 +836,16 @@
                 ]
               ]
             },
-            "caption": "“The moment a sentence finds its shape”, as a melody."
+            "caption": "“The moment a sentence finds its shape”, as a melody.",
+            "show": {
+              "at": [
+                -0.3,
+                0.72,
+                -0.28
+              ],
+              "size": 0.3,
+              "motion": "breathe"
+            }
           }
         ]
       },

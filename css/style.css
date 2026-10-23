@@ -528,8 +528,13 @@ body.is-focus .labels *, body.is-focus .world-info *, body.is-focus .story *, bo
 .hall-caption b { display: block; font-weight: 300; font-style: italic; font-size: clamp(22px, 2.6vw, 34px); line-height: 1.2; margin-top: 8px; }
 .hall-hint { position: fixed; left: 50%; top: 92px; transform: translateX(-50%); z-index: 6; margin: 0; color: var(--muted); text-align: center; pointer-events: none; opacity: 0; transition: opacity 1.2s var(--ease); max-width: 86vw; }
 .hall-hint.is-on { opacity: 1; }
+.hall-leave { position: fixed; right: 32px; bottom: 76px; z-index: 7; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 1s var(--ease), transform 1s var(--ease); }
+.hall-leave.is-on { opacity: 1; pointer-events: auto; transform: none; }
+body.in-hall .hint { opacity: 0; transition: opacity 0.8s var(--ease); }
 @media (pointer: coarse), (max-aspect-ratio: 1/1) {
   /* On a phone the thumbs are below: the words stand above them. */
-  .hall-caption { bottom: auto; top: 16%; }
-  .hall-hint { bottom: auto; top: 11%; }
+  .hall-caption { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 168px); }
+  .hall-hint { bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 128px); }
+  .hall-leave { right: 50%; bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 72px); transform: translate(50%, -6px); }
+  .hall-leave.is-on { transform: translate(50%, 0); }
 }

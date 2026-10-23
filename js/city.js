@@ -247,7 +247,9 @@ export class City {
       const x = lerp(px0 + inset, px1 - inset, i / n), z = lerp(pz0 + inset, pz1 - inset, i / n);
       marks.push(x, 0, pz0 + inset, x, 0, pz1 - inset, px0 + inset, 0, z, px1 - inset, 0, z);
     }
-    this.group.add(lines(kerbs, 0x8f8677, 0.2), lines(marks, 0x8f8677, 0.09));
+    this.streetLines = [lines(kerbs, 0x8f8677, 0.2), lines(marks, 0x8f8677, 0.09)];
+    for (const l of this.streetLines) l.userData.opacity = l.material.opacity;
+    this.group.add(...this.streetLines);
 
     // Centre lines: one segment per stretch of road between junctions, dashed in the shader.
     const pos = [], run = [];
@@ -517,7 +519,15 @@ export class City {
   door(t, dt) {
     const w = this.walker.pos, at = new THREE.Vector3(), facing = new THREE.Vector3();
     let best = null, bestD = Infinity;
-    if (this.active && this.mode === 'walk') {
+    // Leaving the hall: the doorway opens just before you, wherever you are, and you go through.
+    const exit = this.hall.exit;
+    if (exit) {
+      this.doorway.setViewport(window.innerHeight, this.engine.renderer.getPixelRatio());
+      this.doorway.update(t, dt, { at: exit.door, facing: exit.facing, wall: 'exit', open: exit.open, height: 1 });
+      return;
+    }
+    // In the grown hall there are no walls to open: it is all dark space.
+    if (this.active && this.mode === 'walk' && !(this.hall.it && this.hall.k > 1.3)) {
       for (const it of this.hall.it ? [this.hall.it] : this.items) {
         const p = { ...it.plot, ...this.hall.bounds(it) };
         if (w.y > p.h + 0.5) continue;
@@ -566,6 +576,12 @@ export class City {
     this.laneUniforms.uFade.value = 1 - away;
     for (const it of this.items) if (it !== this.hall.it) it.anchor.visible = away < 0.5;
     this.labelsRoot.style.opacity = String(1 - away);
+    // No ground, no water, no streets, no one else: a black void with only the plot's pieces.
+    this.ocean.userData.uniforms.uFade.value = 1 - away;
+    this.ocean.visible = away < 0.99;
+    for (const l of this.streetLines) l.material.opacity = l.userData.opacity * (1 - away);
+    for (const v of this.visitors.list) v.mesh.visible = away < 0.5;
+    if (this.engine.scene.fog) this.engine.scene.fog.density = 0.016 - 0.011 * away;
     // Standing on a plot opens its panel; walking off closes it (in the hall, you stand in it).
     if (this.active && this.mode === 'walk' && !e.flight && !this.hall.it) {
       const here = plotAt(this.walker.pos.x, this.walker.pos.z);
@@ -634,8 +650,9 @@ export class City {
           inside = out === 0 || (!!it.inside && out < 1.5);
           it.inside = inside;
           // Stepped in: the plot grows into the hall around you; walked out: it folds back.
-          if (inside && this.mode === 'walk' && this.hall.it !== it) this.hall.open(it);
+          if (inside && this.mode === 'walk' && this.hall.it !== it && this.hall.leaving !== it) this.hall.open(it);
           else if (!inside && this.hall.it === it) this.hall.close();
+          if (!inside && this.hall.leaving === it && !this.hall.exit) this.hall.leaving = null;
         } else it.inside = undefined;
         it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside });
       }

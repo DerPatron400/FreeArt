@@ -221,7 +221,8 @@ export class Walker {
   // Where the chase camera wants to be for the current state.
   cameraGoal(out) {
     const d = this.dist, p = this.pitch;
-    return out.set(Math.sin(this.yaw) * Math.cos(p) * d, Math.sin(p) * d + 0.2, Math.cos(this.yaw) * Math.cos(p) * d).add(this.pos);
+    const lift = 0.2 * Math.min(1, d); // close in (the hall's guide looks through your eyes), no lift
+    return out.set(Math.sin(this.yaw) * Math.cos(p) * d, Math.sin(p) * d + lift, Math.cos(this.yaw) * Math.cos(p) * d).add(this.pos);
   }
 
   place(x, z, yaw = this.yaw, y = this.pos.y || 1.6) {
@@ -401,12 +402,12 @@ export class Walker {
       // The camera never goes under the ground: there it stays low and tilts up instead,
       // still looking along the direction it would have looked at the blob.
       const goal = this.cameraGoal(new THREE.Vector3());
-      const focus = this.pos.clone().add(new THREE.Vector3(0, 0.12, 0));
+      const focus = this.pos.clone().add(new THREE.Vector3(0, 0.12 * Math.min(1, this.dist), 0));
       const dir = focus.clone().sub(goal).normalize();
       goal.y = Math.max(goal.y, 0.3);
       cam.position.lerp(goal, damp(this.mode === 'tour' ? 2 : 7, dt));
       if (cam.position.y < 0.3) cam.position.y = 0.3;
-      const lookGoal = goal.clone().addScaledVector(dir, Math.max(this.dist, focus.distanceTo(goal))).addScaledVector(this.vel, 0.08);
+      const lookGoal = goal.clone().addScaledVector(dir, Math.max(this.dist, focus.distanceTo(goal), 2)).addScaledVector(this.vel, 0.08);
       this.look.lerp(lookGoal, damp(7, dt));
       cam.lookAt(this.look);
       this.engine.controls.target.copy(this.look);

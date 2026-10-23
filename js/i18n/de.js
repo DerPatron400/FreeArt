@@ -128,6 +128,7 @@ export default {
   "hint.map": "Ziehen zum Verschieben · Rechtsklick-Ziehen zum Drehen · WASD",
   "hint.tour": "Rundflug über die Welten · beliebige Taste oder Klick, um selbst zu steuern",
   "hall.rejoin": "Du fliegst frei · flieg in die Lichtlinie, um die Führung fortzusetzen",
+  "hall.leave": "Zurück in die Stadt",
   "loader.error": "Die Welten ließen sich nicht öffnen:",
   "g.speak": "Sprechen",
   "g.noHear": "Dein Browser konnte dich nicht hören.",

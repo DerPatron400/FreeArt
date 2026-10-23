@@ -775,6 +775,37 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     }
   };
   place(items);
+  // The gallery: in a grown plot (the hall) the pieces leave their places and spread out
+  // through the dark, one after another in the maker's order, each given room by its size
+  // (a big piece stands further from its neighbours), turning left and right and rising
+  // and falling, so that going from one to the next is a real journey with depth around it.
+  const gallery = () => {
+    const hash = (n) => { const x = Math.sin(n * 91.345 + 7.13) * 43758.5453; return x - Math.floor(x); };
+    let heading = hash(pieces.length) * Math.PI * 2, prev = 0;
+    const at = new THREE.Vector3(), out = [];
+    pieces.forEach((p, i) => {
+      const s = p.size0 * p.scale;
+      if (i) {
+        heading += (hash(i) - 0.5) * 2.2;
+        const step = 1.15 * (prev + s) + U * 0.12;
+        at.x += Math.cos(heading) * step;
+        at.z += Math.sin(heading) * step;
+      }
+      const side = (i % 2 ? 1 : -1) * (0.35 + hash(i + 40) * 0.5) * s;
+      p.gallery = new THREE.Vector3(at.x - Math.sin(heading) * side, Math.max(s * 0.7, mid + (hash(i + 80) - 0.4) * s * 1.6), at.z + Math.cos(heading) * side);
+      out.push(p.gallery);
+      prev = s;
+    });
+    // Centred on the plot, so it spreads out evenly around where the plot stood.
+    const c = new THREE.Vector3();
+    for (const v of out) c.add(v);
+    if (out.length) c.divideScalar(out.length).setY(0);
+    for (const v of out) v.sub(c);
+    const box = new THREE.Box3();
+    for (const p of pieces) box.expandByPoint(p.gallery.clone().addScalar(p.size0 * p.scale)).expandByPoint(p.gallery.clone().addScalar(-p.size0 * p.scale));
+    return box;
+  };
+  let galleryBox = gallery(), spread = 0;
   const look = new THREE.Vector3(), cube = new THREE.Box3(), at = new THREE.Vector3(), ws = new THREE.Vector3();
   const ease = (x) => x * x * (3 - 2 * x);
   return {
@@ -784,6 +815,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       const list = exhibitItems(w);
       if (list.length !== items.length || list.some((m, i) => m.kind !== items[i].kind || m.src !== items[i].src)) return false;
       place(list);
+      galleryBox = gallery();
       return true;
     },
     holderOf(index) { return pieces.find((p) => p.index === index)?.holder; },
@@ -833,6 +865,11 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       const k = group.getWorldScale(ws).x;
       return pieces.map((p) => ({ index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid }));
     },
+    // How far the pieces have spread out into the hall (0: in their plot, 1: the gallery),
+    // and the room the gallery takes (in the plot's own units).
+    spread(v) { spread = v; },
+    galleryBox() { return galleryBox; },
+    galleryAt(index) { return pieces.find((p) => p.index === index)?.gallery || new THREE.Vector3(); },
     // These pieces load before the others (the one a tour shows now, and the next).
     prefer(list) { preferred = list; },
     hold(index) { for (const p of pieces) p.held = p.index === index; },
@@ -883,6 +920,11 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
           if (p.motion === 'float') h.position.y += Math.sin(c * 0.55) * U * 0.018;
           if (p.motion === 'breathe') k *= 1 + 0.045 * Math.sin(c * 0.8);
         }
+        // In the hall: drawn out of their places into the gallery, the first ones first.
+        if (spread > 0) {
+          const g = ease(Math.max(0, Math.min(1, spread * 1.6 - p.index * 0.6 / Math.max(1, pieces.length))));
+          h.position.lerp(look.copy(p.gallery).setY(p.gallery.y + Math.sin(c * 0.45) * p.size0 * p.scale * 0.04), g);
+        }
         // 'rise': resting low and small until someone comes, then lifting into place.
         if (p.nearMode === 'rise') {
           const ground = p.size0 * p.scale * 0.3;
@@ -930,7 +972,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       let n = 0;
       for (const p of pieces) {
         if (n >= HAZE_MAX) break;
-        const tint = p.tint || p.piece.tint, w = p.tint ? 1 - p.show : p.piece.haze;
+        const tint = p.tint || p.piece.tint, w = (p.tint ? 1 - p.show : p.piece.haze) * (1 - spread);
         if (!tint || w < 0.01) continue;
         // Bigger pieces reach further into the plot's colour.
         const r = Math.max(U * 0.12, p.size0 * (p.scale || 1) * 0.9), c = vivid(tint);
@@ -945,11 +987,11 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       if (ambient > 0.01) for (let i = 0; i < palLights.length && n < HAZE_MAX; i++, n++) {
         const [x, y, z, c] = palLights[i];
         u.uP.value[n].set(x, y, z, palReach);
-        u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8);
+        u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8 * (1 - spread));
       }
       u.uCount.value = n;
       u.uTime.value = t;
-      haze.visible = n > 0;
+      haze.visible = n > 0 && spread < 0.99; // the hall is a black void: only the pieces
     },
     dispose() {
       own.gone = true;

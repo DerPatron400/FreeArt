@@ -48,6 +48,7 @@ uniform vec3 uDeep;
 uniform vec3 uCrest;
 uniform vec3 uFog;
 uniform vec2 uTexel;
+uniform float uFade;
 varying vec4 vUv;
 varying vec3 vWorld;
 ${WAVES}
@@ -84,7 +85,7 @@ void main() {
   float d = length(vWorld.xz - cameraPosition.xz);
   // Fade fully into the background well before the edge, so the water has no border.
   float fade = exp(-d * 0.014) * (1.0 - smoothstep(110.0, 220.0, d));
-  gl_FragColor = vec4(mix(uFog, col, fade), 1.0);
+  gl_FragColor = vec4(mix(uFog, col, fade * uFade), 1.0);
 }`;
 
 export function createOcean(renderer, { height = -0.4, size = 600, resolution = 0.3, amp = 0.25 } = {}) {
@@ -96,6 +97,7 @@ export function createOcean(renderer, { height = -0.4, size = 600, resolution = 
     uCrest: { value: new THREE.Color('#8f9a96').convertSRGBToLinear() },
     uTexel: { value: new THREE.Vector2(1, 1) },
     uFog: { value: new THREE.Color(0x000000) },
+    uFade: { value: 1 }, // 0: gone into the dark
   };
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(size, size, 240, 240), new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader }));
   mesh.rotation.x = -Math.PI / 2; // faces up

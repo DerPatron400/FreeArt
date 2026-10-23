@@ -128,6 +128,7 @@ export default {
   "hint.map": "ドラッグで移動 · 右ドラッグで回転 · WASD",
   "hint.tour": "世界を巡っています · キーを押すかクリックで自分で操作",
   "hall.rejoin": "自由に飛行中 · 光の線に入るとツアーの続きへ",
+  "hall.leave": "街へ戻る",
   "loader.error": "世界を開けませんでした：",
   "g.speak": "話す",
   "g.noHear": "ブラウザがあなたの声を聞き取れませんでした。",

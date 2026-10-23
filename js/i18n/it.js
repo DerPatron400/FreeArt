@@ -128,6 +128,7 @@ export default {
   "hint.map": "Trascina per spostarti · trascina col tasto destro per ruotare · WASD",
   "hint.tour": "In giro tra i mondi · premi un tasto o clicca per guidare tu",
   "hall.rejoin": "Voli libero · entra nella linea di luce per riprendere la visita",
+  "hall.leave": "Torna alla città",
   "loader.error": "Non è stato possibile aprire i mondi:",
   "g.speak": "Parla",
   "g.noHear": "Il browser non è riuscito a sentirti.",
