@@ -4,7 +4,7 @@ export default {
   "loader.line": "Jeder Mensch trägt eine eigene Welt in sich: Jahre stiller Aufmerksamkeit für Dinge, die sonst niemand bemerkt. Hier bekommen diese Welten Gestalt.",
   "loader.enter": "Eintreten",
   "loader.silent": "Ohne Ton eintreten",
-  "nav.city": "Start",
+  "nav.city": "Galerie",
   "nav.manifesto": "Manifest",
   "nav.create": "Grundstück sichern",
   "nav.soundLabel": "Ton",

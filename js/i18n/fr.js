@@ -4,7 +4,7 @@ export default {
   "loader.line": "Chaque esprit habite un monde à lui : des années d'attention silencieuse portée à des détails que personne d'autre ne remarque. Ici, ces mondes prennent forme.",
   "loader.enter": "Entrer",
   "loader.silent": "Entrer sans le son",
-  "nav.city": "Accueil",
+  "nav.city": "Galerie",
   "nav.manifesto": "Manifeste",
   "nav.create": "Réserver un lot",
   "nav.soundLabel": "Son",

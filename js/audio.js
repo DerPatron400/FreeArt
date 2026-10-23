@@ -1,5 +1,5 @@
 // The Khora ambience under the city and every world, plus a chime when a fragment opens.
-const AMBIENCE = 'audio/khora-ambience.mp3';
+const AMBIENCE = 'audio/khora-ambience.mp3?v=2'; // bump v whenever the file changes: browsers keep it a week
 
 export class Sound {
   constructor() {

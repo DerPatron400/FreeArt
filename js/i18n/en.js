@@ -4,7 +4,7 @@ export default {
   "loader.line": "Every mind inhabits a world of its own: years of quiet attention spent on details others never notice. Here, those worlds are given form.",
   "loader.enter": "Enter",
   "loader.silent": "Enter without sound",
-  "nav.city": "Home",
+  "nav.city": "Gallery",
   "nav.manifesto": "Manifesto",
   "nav.create": "Claim a lot",
   "nav.soundLabel": "Sound",

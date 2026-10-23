@@ -1,6 +1,7 @@
 // Khora: routing between the threshold, the city, a world, and the workshop.
 import { Engine } from './engine.js';
 import { startScramble } from './scramble.js';
+import { revealLines, revealOnView } from './lines.js';
 import { City, plotNumber, plotCell } from './city.js';
 import { WorldView } from './worldview.js';
 import { useEngine, exhibitItems } from './exhibit.js';
@@ -181,6 +182,8 @@ function showPlot(p, world) {
     primary.href = `#/create?plot=${p.x},${p.z}`;
     $('pl-invite').hidden = false;
   }
+  // The title, then the words, a line at a time.
+  revealLines($('pl-text'), { delay: revealLines($('pl-title')) });
 }
 $('plot-close').addEventListener('click', () => city.select(null));
 $('pl-invite').addEventListener('click', async () => {
@@ -209,6 +212,7 @@ function showFragment(frag, i, world) {
   if (frag.link) link.href = frag.link;
   $('fragment').hidden = false;
   $('fragment').scrollTop = 0;
+  revealLines($('fr-text'), { delay: revealLines($('fr-title')) });
   sound.chime(i);
 }
 
@@ -294,8 +298,11 @@ function route() {
   const params = new URLSearchParams(query || '');
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('is-active', a.dataset.nav === (page || 'city')));
 
-  // The manifesto is an overlay; whatever scene is underneath keeps living.
+  // The manifesto is an overlay; whatever scene is underneath keeps living. Each time it
+  // opens, its title and paragraphs rise in, a line at a time, as they come into view.
+  const opening = page === 'manifesto' && $('manifesto').hidden;
   $('manifesto').hidden = page !== 'manifesto';
+  if (opening) revealOnView([...$('manifesto').querySelectorAll('h2, p:not(.mono)')]);
   document.body.classList.toggle('is-manifesto', page === 'manifesto');
   if (page === 'manifesto') {
     if (!view) showCity();

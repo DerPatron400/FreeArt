@@ -4,7 +4,7 @@ export default {
   "loader.line": "每个人心里都住着一个世界：多年静静的专注，落在别人从未留意的细节上。在这里，这些世界有了形状。",
   "loader.enter": "进入",
   "loader.silent": "静音进入",
-  "nav.city": "首页",
+  "nav.city": "画廊",
   "nav.manifesto": "宣言",
   "nav.create": "认领地块",
   "nav.soundLabel": "声音",

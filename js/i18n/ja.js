@@ -4,7 +4,7 @@ export default {
   "loader.line": "誰もが自分だけの世界に住んでいます。ほかの人が気づかない細部に、何年も静かに注いできたまなざし。ここでは、その世界にかたちを与えます。",
   "loader.enter": "入る",
   "loader.silent": "音なしで入る",
-  "nav.city": "ホーム",
+  "nav.city": "ギャラリー",
   "nav.manifesto": "宣言",
   "nav.create": "区画を選ぶ",
   "nav.soundLabel": "サウンド",

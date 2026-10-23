@@ -4,7 +4,7 @@ export default {
   "loader.line": "Ogni mente abita un mondo tutto suo: anni di attenzione silenziosa per dettagli che nessun altro nota. Qui quei mondi prendono forma.",
   "loader.enter": "Entra",
   "loader.silent": "Entra senza audio",
-  "nav.city": "Home",
+  "nav.city": "Galleria",
   "nav.manifesto": "Manifesto",
   "nav.create": "Richiedi un lotto",
   "nav.soundLabel": "Suono",

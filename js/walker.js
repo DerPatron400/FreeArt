@@ -60,10 +60,10 @@ export const BLOB_LAYER = 1; // rendered outside the bloom (see Engine)
 
 // One blob: unit geometry scaled to size, with its own uniforms.
 const blobGeometry = new THREE.IcosahedronGeometry(1, 20);
-export function makeBlob(radius, tint) {
+export function makeBlob(radius, tint, core = '#ece4d4') {
   const uniforms = {
     uTime: { value: 0 }, uWobble: { value: 0 }, uSquash: { value: 0 }, uVel: { value: new THREE.Vector3() },
-    uCore: { value: new THREE.Color('#ece4d4') }, uTint: { value: new THREE.Color(tint) },
+    uCore: { value: new THREE.Color(core) }, uTint: { value: new THREE.Color(tint) },
   };
   const mesh = new THREE.Mesh(blobGeometry, new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader }));
   mesh.scale.setScalar(radius);
@@ -90,7 +90,7 @@ export class Walker {
     this.joy = { x: 0, y: 0, id: null, ox: 0, oy: 0 };
     this.tint = new THREE.Color('#c9a46a');
 
-    this.mesh = makeBlob(RADIUS, '#fff6e6');
+    this.mesh = makeBlob(RADIUS, '#f8f9ff', '#e8ebff'); // yours in the site's light tone; the others stay warm
     this.uniforms = this.mesh.userData.uniforms;
     this.mesh.visible = false;
     city.group.add(this.mesh);

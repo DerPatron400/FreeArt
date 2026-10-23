@@ -1,6 +1,6 @@
 <svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
 <g id="Frame 7">
-<path d="M0 2C0 0.895431 0.895431 0 2 0H26C27.1046 0 28 0.895431 28 2V26C28 27.1046 27.1046 28 26 28H2C0.895431 28 0 27.1046 0 26V2Z" fill="#E8EBFF" fill-opacity="0.1"/>
+<rect width="28" height="28" rx="4" fill="#E8EBFF" fill-opacity="0.1"/>
 <path id="Vector 1" d="M16 10L12 14L16 18" stroke="#E8EBFF"/>
 </g>
 </svg>
