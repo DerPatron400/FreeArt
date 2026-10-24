@@ -549,8 +549,12 @@ export class City {
     if (this.active && this.mode === 'walk' && !(this.hall.it && this.hall.k > 1.3)) {
       for (const it of this.hall.it ? [this.hall.it] : this.items) {
         const p = { ...it.plot, ...this.hall.bounds(it) };
-        if (w.y > p.h + 0.5) continue;
         const dx = Math.abs(w.x - p.cx) - p.w / 2, dz = Math.abs(w.z - p.cz) - p.d / 2;
+        // Above the plot: the doorway opens in its roof, under you.
+        if (w.y > p.h) {
+          if (dx < 0 && dz < 0 && w.y - p.h < bestD) { bestD = w.y - p.h; best = { it, p, top: true }; }
+          continue;
+        }
         const out = dx > 0 || dz > 0;
         const dist = out ? Math.hypot(Math.max(dx, 0), Math.max(dz, 0)) : -Math.max(dx, dz);
         if (dist < bestD) { bestD = dist; best = { it, p, onX: dx > dz }; }
@@ -558,10 +562,13 @@ export class City {
     }
     let open = 0, wall = null, height = 1;
     if (best && bestD < 4.5) {
-      const p = best.p, R = Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
+      const p = best.p, R = best.top ? Math.min(DOOR_RADIUS, p.w * 0.45, p.d * 0.45) : Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
       height = R / DOOR_RADIUS;
       const y = Math.min(Math.max(w.y, R * 1.05), p.h - R * 1.05);
-      if (best.onX) {
+      if (best.top) {
+        at.set(Math.min(Math.max(w.x, p.cx - p.w / 2 + R), p.cx + p.w / 2 - R), p.h, Math.min(Math.max(w.z, p.cz - p.d / 2 + R), p.cz + p.d / 2 - R));
+        facing.set(0, 1, 0);
+      } else if (best.onX) {
         const sx = Math.sign(w.x - p.cx) || 1;
         at.set(p.cx + sx * p.w / 2, y, Math.min(Math.max(w.z, p.cz - p.d / 2 + R), p.cz + p.d / 2 - R));
         facing.set(sx, 0, 0);
@@ -574,7 +581,7 @@ export class City {
       // come in, or about to leave), so it closes behind you as you walk on.
       open = bestD >= 0 ? 1 - Math.min(1, Math.max(0, (bestD - 0.4) / 4)) : 1 - Math.min(1, Math.max(0, (-bestD - 0.3) / 1.2));
       open = open * open * (3 - 2 * open);
-      wall = best.it.plot.cx + ',' + best.it.plot.cz + (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz);
+      wall = best.it.plot.cx + ',' + best.it.plot.cz + (best.top ? 'top' : (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz));
     }
     // Coming up to it from outside, you can already see in (see lookIn()).
     const peek = best && bestD >= 0 && open > 0.02 && !this.hall.it ? best.it : null;

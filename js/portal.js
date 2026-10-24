@@ -114,18 +114,21 @@ export function createDoorway() {
   group.visible = false;
 
   let cursor = 0, carry = 0, radius = SEED, speed = 0, arc = 0, glow = 0, key = null;
-  const centre = new THREE.Vector3(), normal = new THREE.Vector3(0, 0, 1), x = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const centre = new THREE.Vector3(), normal = new THREE.Vector3(0, 0, 1), x = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+  const Z = new THREE.Vector3(0, 0, 1), NORTH = new THREE.Vector3(0, 0, -1);
 
   function emit(n) {
-    x.crossVectors(up, normal).normalize();
+    // Its own two directions in the wall (or roof): across, and up it.
+    x.crossVectors(Math.abs(normal.y) > 0.9 ? NORTH : up, normal).normalize();
+    v.crossVectors(normal, x);
     for (let k = 0; k < n; k++) {
       const a = (0.25 - Math.random() * Math.max(arc, 0.02)) * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
       const r = radius * (0.92 + Math.random() * 0.22), sp = (0.4 + Math.random()) * Math.max(radius, 0.3);
       const i = cursor;
       cursor = (i + 1) % N;
       const ox = c * r, oy = s * r, vx = (c * 0.4 - s * 0.7) * sp, vy = (s * 0.4 + c * 0.7) * sp, vz = (Math.random() - 0.5) * 0.6 * sp;
-      pos[i * 3] = centre.x + x.x * ox; pos[i * 3 + 1] = centre.y + oy; pos[i * 3 + 2] = centre.z + x.z * ox;
-      vel[i * 3] = x.x * vx + normal.x * vz; vel[i * 3 + 1] = vy; vel[i * 3 + 2] = x.z * vx + normal.z * vz;
+      pos[i * 3] = centre.x + x.x * ox + v.x * oy; pos[i * 3 + 1] = centre.y + x.y * ox + v.y * oy; pos[i * 3 + 2] = centre.z + x.z * ox + v.z * oy;
+      vel[i * 3] = x.x * vx + v.x * vy + normal.x * vz; vel[i * 3 + 1] = x.y * vx + v.y * vy + normal.y * vz; vel[i * 3 + 2] = x.z * vx + v.z * vy + normal.z * vz;
       age[i] = 0; life[i] = 0.5 + Math.random() * 1.1; size[i] = 0.5 + Math.random() * 1.1;
     }
   }
@@ -150,7 +153,9 @@ export function createDoorway() {
       uniforms.uGlow.value = glow;
       uniforms.uHalf.value = Math.max(radius * 2.2, 0.45);
       mesh.position.copy(centre);
-      mesh.rotation.set(0, Math.atan2(normal.x, normal.z), 0);
+      // Turned to face out of its wall, or up out of a roof.
+      if (Math.abs(normal.y) > 0.9) mesh.quaternion.setFromUnitVectors(Z, normal);
+      else mesh.rotation.set(0, Math.atan2(normal.x, normal.z), 0);
       carry += (open > 0.02 ? 20 + open * 160 : 0) * glow * dt;
       const n = Math.floor(carry);
       carry -= n;
