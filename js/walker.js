@@ -117,7 +117,7 @@ export class Walker {
     canvas.addEventListener('pointerdown', (e) => {
       if (!this.active) return;
       if (this.mode === 'tour') { this.stopTour(); return; }
-      this.city.hall?.pause(); // touching the view takes over from the guide in a plot
+      // (In a plot, turning the view keeps the guide: only moving away leaves it, see hall.js.)
       // On touch screens the left half is a joystick, the right half turns the view.
       if (coarse && e.clientX < window.innerWidth * 0.45) {
         Object.assign(this.joy, { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 });
@@ -135,6 +135,7 @@ export class Walker {
         this.joy.x = clamp((e.clientX - this.joy.ox) / 60, -1, 1);
         this.joy.y = clamp((e.clientY - this.joy.oy) / 60, -1, 1);
       } else if (last && e.pointerId === last.id) {
+        this.lookedAt = performance.now();
         this.yaw -= (e.clientX - last.x) * 0.006;
         this.pitch = clamp(this.pitch + (e.clientY - last.y) * 0.004, -1.25, 1.4);
         last.x = e.clientX; last.y = e.clientY;
@@ -147,6 +148,7 @@ export class Walker {
     canvas.addEventListener('wheel', (e) => {
       if (!this.active) return;
       e.preventDefault();
+      if (this.city.hall?.zoom(e.deltaY)) return; // guided in a plot: nearer to the piece or further back
       this.dist = clamp(this.dist * (1 + e.deltaY * 0.001), 1.0, 16);
     }, { passive: false });
     window.addEventListener('keydown', (e) => {

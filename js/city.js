@@ -153,6 +153,7 @@ export class City {
 
     engine.canvas.addEventListener('click', () => {
       if (!this.active || engine.flight || engine.dragDistance >= 6) return;
+      if (this.hall.it) { this.hall.click(); return; } // in a hall, a piece clicked is a stop to fly to
       const fly = this.mode === 'map';
       if (this.hovered) this.select(this.hovered, { fly }); else this.select(null);
     });
@@ -669,6 +670,12 @@ export class City {
       this.hovered = hovered;
       document.body.style.cursor = hovered ? 'pointer' : '';
     }
+    // In a hall, flying free: a hand over a piece you can click to fly to (looked for a few times a second).
+    if (this.hall.it && (this.pieceCheck = (this.pieceCheck || 0) - dt) <= 0) {
+      this.pieceCheck = 0.15;
+      const over = this.hall.hovering();
+      if (over !== this.overPiece) { this.overPiece = over; document.body.style.cursor = over ? 'pointer' : ''; }
+    } else if (!this.hall.it && this.overPiece) { this.overPiece = false; document.body.style.cursor = ''; }
     // The hover outline fades in and out evenly (a quarter second); moving to another plot it
     // fades from one to the next.
     const want = hovered && hovered !== this.selected ? hovered : null;

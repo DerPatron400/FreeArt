@@ -122,6 +122,7 @@ export class Hall {
     this.mode = 'off';
     this.order = [];
     this.nearLine = false;
+    this.zoomK = 1;
     this.stage = 0;
     this.city.refreshVolumes(it.plot);
     // The plot's card steps aside: in here the guide says what each piece is.
@@ -158,6 +159,7 @@ export class Hall {
     if (this.mode !== 'guide' && this.mode !== 'arrive') return;
     if (this.mode === 'arrive' || !this.order.length) this.order = this.plan();
     this.mode = 'free';
+    this.rush = false;
     this.away = false; // you stop on the line itself: it only takes you back once you have left it
     this.drawing = false;
     this.uniforms.uDraw.value = 1e6;
@@ -256,7 +258,7 @@ export class Hall {
     dir.normalize().applyAxisAngle(new THREE.Vector3(0, 1, 0), sway);
     const half = THREE.MathUtils.degToRad(cam.fov) / 2;
     const narrow = Math.min(half, Math.atan(Math.tan(half) * cam.aspect));
-    const D = spot.size / (2 * Math.tan(narrow) * f.fill);
+    const D = spot.size / (2 * Math.tan(narrow) * f.fill) * (this.zoomK || 1);
     out.copy(spot.at).addScaledVector(dir, Math.max(D - f.dist, spot.size * 0.6));
     out.y = Math.max(0.6, spot.at.y);
     // Never out through the walls.
@@ -329,6 +331,19 @@ export class Hall {
     }
   }
 
+  // Looking around while guided: the guide lets the view go while you turn it, and brings it
+  // gently back to the piece a moment after you let go. Only moving leaves the tour.
+  freeLook() {
+    return performance.now() - (this.city.walker.lookedAt || 0) < 1500;
+  }
+
+  // The wheel while guided: nearer to the pieces, or further back (kept for the whole tour).
+  zoom(dy) {
+    if (this.mode !== 'guide' && this.mode !== 'arrive') return false;
+    this.zoomK = Math.min(2.5, Math.max(0.45, (this.zoomK || 1) * (1 + dy * 0.001)));
+    return true;
+  }
+
   // The walker asks each frame: are you steering me? (true while the guide is.)
   drive(dt, moving) {
     if (this.exit) return this.going(dt);
@@ -347,24 +362,27 @@ export class Hall {
     // A slow sway around the piece while you look at it.
     const target = this.viewpoint(spot, Math.sin(this.sway) * f.sway, undefined, this.stage ? this.before(this.stage % this.order.length, spots) : w.pos);
     // A smooth glide: a spring with no overshoot, its speed kept gentle.
-    const om = f.glide;
+    const om = this.rush ? f.glide * 2.6 : f.glide; // clicked to: quick, still without overshoot
     const acc = target.clone().sub(w.pos).multiplyScalar(om * om).addScaledVector(this.speed, -2 * om);
     this.speed.addScaledVector(acc, dt);
-    const top = Math.max(2.5, spot.size * 1.2);
+    const top = Math.max(2.5, spot.size * 1.2) * (this.rush ? 4 : 1);
     if (this.speed.length() > top) this.speed.setLength(top);
     w.pos.addScaledVector(this.speed, dt);
     w.vel.copy(this.speed);
-    // Look at the piece.
-    const yaw = Math.atan2(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
-    let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    w.yaw += dy * damp(2.2, dt);
-    const flat = Math.hypot(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
-    const pitch = Math.atan2(w.pos.y - spot.at.y, Math.max(0.5, flat)) + f.pitch;
-    w.pitch += (pitch - w.pitch) * damp(1.5, dt);
+    // Look at the piece (unless you are looking around yourself just now).
+    if (!this.freeLook()) {
+      const yaw = Math.atan2(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
+      let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      w.yaw += dy * damp(1.6, dt);
+      const flat = Math.hypot(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
+      const pitch = Math.atan2(w.pos.y - spot.at.y, Math.max(0.5, flat)) + f.pitch;
+      w.pitch += (pitch - w.pitch) * damp(1.2, dt);
+    }
     // Guided, you see through your own eyes: nothing of you stands between you and the piece.
     w.dist += (EYE - w.dist) * damp(1.5, dt);
     // Arrived: stay a while, then on to the next.
     const here = w.pos.distanceTo(target) < Math.max(0.35, spot.size * 0.2) && this.speed.length() < Math.max(0.6, spot.size * 0.3);
+    if (this.rush && w.pos.distanceTo(target) < Math.max(1, spot.size * 0.6)) { this.rush = false; this.say(spot); } // its words, right as you get there
     if (here || this.dwell > 0) {
       this.dwell += dt;
       this.sway += dt * 0.22;
@@ -387,6 +405,34 @@ export class Hall {
     this.dwell = 0;
     this.say(null);
     this.resume();
+  }
+
+  // A piece clicked while flying free (or guided): a quick flight straight to its stop,
+  // with its words shown as soon as you are there; then the tour carries on from it.
+  click() {
+    if (!this.it || this.exit || this.mode === 'off' || this.mode === 'arrive') return;
+    const e = this.city.engine;
+    if (e.pointer.x < -2) return;
+    e.raycaster.setFromCamera(e.pointer, e.camera);
+    const hit = this.it.exhibit.pick(e.raycaster);
+    if (!hit) return;
+    if (!this.order.length) this.order = this.plan();
+    const stage = this.order.indexOf(hit.index);
+    if (stage < 0) return;
+    this.stage = stage;
+    this.dwell = 0;
+    this.rush = true;
+    this.say(null);
+    this.resume();
+  }
+
+  // Under the pointer while flying free: a piece you could click to fly to.
+  hovering() {
+    if (!this.it || this.mode !== 'free' || this.exit) return false;
+    const e = this.city.engine;
+    if (e.pointer.x < -2) return false;
+    e.raycaster.setFromCamera(e.pointer, e.camera);
+    return !!this.it.exhibit.pick(e.raycaster);
   }
 
   // The stop nearest to you (its viewpoint on the line).
@@ -421,8 +467,8 @@ export class Hall {
     const sp = ease(this.spreadAmt);
     const gc = new THREE.Vector3((g.min.x + g.max.x) / 2, (g.min.y + g.max.y) / 2, (g.min.z + g.max.z) / 2).multiplyScalar(k);
     const centre = new THREE.Vector3(a.x + gc.x * sp, it.plot.h * k * 0.4 * (1 - sp) + gc.y * sp, a.z + gc.z * sp);
-    const rx = THREE.MathUtils.lerp(it.plot.w * k * 0.75, b.w * 0.42, sp) * (f === FEEL.phone ? 1.15 : 1);
-    const rz = THREE.MathUtils.lerp(it.plot.d * k * 0.75, b.d * 0.42, sp) * (f === FEEL.phone ? 1.15 : 1);
+    const rx = THREE.MathUtils.lerp(it.plot.w * k * 0.75, b.w * 0.42, sp) * (f === FEEL.phone ? 1.15 : 1) * (this.zoomK || 1);
+    const rz = THREE.MathUtils.lerp(it.plot.d * k * 0.75, b.d * 0.42, sp) * (f === FEEL.phone ? 1.15 : 1) * (this.zoomK || 1);
     x.angle += dt * 0.06;
     const goal = new THREE.Vector3(centre.x + Math.sin(x.angle) * rx, centre.y + Math.max(rx, rz) * 0.32, centre.z + Math.cos(x.angle) * rz);
     const m = 1;
@@ -435,11 +481,13 @@ export class Hall {
     this.speed.addScaledVector(acc, dt);
     w.pos.addScaledVector(this.speed, dt);
     w.vel.copy(this.speed);
-    const yaw = Math.atan2(w.pos.x - centre.x, w.pos.z - centre.z);
-    let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
-    w.yaw += dy * damp(1.4, dt);
-    const flat = Math.hypot(w.pos.x - centre.x, w.pos.z - centre.z);
-    w.pitch += (Math.atan2(w.pos.y - centre.y, Math.max(0.5, flat)) - w.pitch) * damp(1.2, dt);
+    if (!this.freeLook()) {
+      const yaw = Math.atan2(w.pos.x - centre.x, w.pos.z - centre.z);
+      let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      w.yaw += dy * damp(1.4, dt);
+      const flat = Math.hypot(w.pos.x - centre.x, w.pos.z - centre.z);
+      w.pitch += (Math.atan2(w.pos.y - centre.y, Math.max(0.5, flat)) - w.pitch) * damp(1.2, dt);
+    }
     w.dist += (EYE - w.dist) * damp(1.5, dt);
     // All spread out: the line draws itself, and the guide takes you along it.
     if (this.spreadAmt >= 1) {
