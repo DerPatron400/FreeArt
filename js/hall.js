@@ -204,15 +204,9 @@ export class Hall {
     this.it?.exhibit.prefer([]);
   }
 
-  // The order the guide takes: from where you came in, always to the nearest piece next.
-  // The gallery's own order (the maker's), from whichever end of it is nearer.
+  // The order the guide takes: the maker's, always from their first piece to their last.
   plan() {
-    const spots = this.it.exhibit.spots().filter((s) => s.size > 0).sort((a, b) => a.index - b.index);
-    if (spots.length < 2) return spots.map((s) => s.index);
-    const g = (s) => this.it.anchor.localToWorld(this.it.exhibit.galleryAt(s.index).clone());
-    const w = this.city.walker.pos;
-    if (g(spots[spots.length - 1]).distanceTo(w) < g(spots[0]).distanceTo(w)) spots.reverse();
-    return spots.map((s) => s.index);
+    return this.it.exhibit.spots().filter((s) => s.size > 0).sort((a, b) => a.index - b.index).map((s) => s.index);
   }
 
   // Back to the city: a doorway opens just before you, you turn to it and go through, and
