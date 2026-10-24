@@ -183,7 +183,7 @@ export class Hall {
     if (this.mode !== 'guide' && this.mode !== 'arrive') return;
     if (this.mode === 'arrive' || !this.order.length) this.order = this.plan();
     this.mode = 'free';
-    this.rush = false;
+    this.rush = this.lead = false;
     this.away = false; // you stop on the line itself: it only takes you back once you have left it
     this.drawing = false;
     this.uniforms.uDraw.value = 1e6;
@@ -395,10 +395,10 @@ export class Hall {
     // What to look at: the piece, or (a setting) the way it was seen.
     const look = spot.setting && room ? room.eye.clone().addScaledVector(room.forward, 10).setY(room.eye.y) : spot.at;
     // A smooth glide: a spring with no overshoot, its speed kept gentle.
-    const om = this.rush ? f.glide * 2.6 : f.glide; // clicked to: quick, still without overshoot
+    const om = f.glide * (this.rush ? 2.6 : this.lead ? 1.8 : 1); // clicked to: quick, still without overshoot
     const acc = target.clone().sub(w.pos).multiplyScalar(om * om).addScaledVector(this.speed, -2 * om);
     this.speed.addScaledVector(acc, dt);
-    const top = Math.max(2.5, spot.size * 1.2) * (this.rush ? 4 : 1);
+    const top = Math.max(2.5, spot.size * 1.2) * (this.rush ? 4 : this.lead ? 2.5 : 1);
     if (this.speed.length() > top) this.speed.setLength(top);
     w.pos.addScaledVector(this.speed, dt);
     w.vel.copy(this.speed);
@@ -418,6 +418,7 @@ export class Hall {
     const here = w.pos.distanceTo(target) < Math.max(0.35, sz * 0.2) && this.speed.length() < Math.max(0.6, sz * 0.3);
     if (this.rush && w.pos.distanceTo(target) < Math.max(1, sz * 0.6)) { this.rush = false; this.say(spot); } // its words, right as you get there
     if (here || this.dwell > 0) {
+      this.lead = false;
       this.dwell += dt;
       this.sway += dt * 0.22;
       this.say(spot);
@@ -530,6 +531,7 @@ export class Hall {
       // Come for one piece: straight on to it.
       const s = this.target == null ? -1 : this.order.indexOf(this.target);
       if (s >= 0) { this.stage = s; this.rush = true; }
+      else this.lead = true; // the first stop: a brisker way in than the walk between pieces
       this.target = null;
       this.mode = 'guide';
       this.buildPath();
