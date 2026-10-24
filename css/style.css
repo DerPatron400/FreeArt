@@ -323,6 +323,7 @@ output { color: var(--paper); }
 
 /* Showing the process */
 .world-info__story { display: block; margin: 0 0 14px; }
+.world-info__tour { display: block; margin: 0 0 12px; }
 .story {
   position: fixed; right: 0; top: 0; bottom: 0; z-index: 8; width: min(600px, 100vw); overflow-y: auto;
   padding: 88px 44px 64px; background: rgba(0, 0, 0, 0.86); border-left: 1px solid var(--faint);
@@ -600,7 +601,7 @@ body.is-focus .labels *, body.is-focus .world-info *, body.is-focus .story *, bo
 .hall-caption b { display: block; font-weight: 300; font-style: italic; font-size: clamp(22px, 2.6vw, 34px); line-height: 1.2; margin-top: 8px; }
 .hall-hint { position: fixed; left: 50%; top: 92px; transform: translateX(-50%); z-index: 6; margin: 0; color: var(--muted); text-align: center; pointer-events: none; opacity: 0; transition: opacity 1.2s var(--ease); max-width: 86vw; }
 .hall-hint.is-on { opacity: 1; }
-.hall-leave { position: fixed; right: 32px; bottom: 76px; z-index: 7; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 1s var(--ease), transform 1s var(--ease); }
+.hall-leave { position: fixed; right: 32px; top: 96px; z-index: 7; display: flex; gap: 8px; opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 1s var(--ease), transform 1s var(--ease); }
 .hall-leave.is-on { opacity: 1; pointer-events: auto; transform: none; }
 body.in-hall .hint { opacity: 0; transition: opacity 0.8s var(--ease); }
 .hall-nav { position: fixed; left: 50%; bottom: 26px; transform: translate(-50%, 6px); z-index: 7; display: flex; align-items: center; gap: 6px; opacity: 0; pointer-events: none; transition: opacity 1s var(--ease), transform 1s var(--ease); }

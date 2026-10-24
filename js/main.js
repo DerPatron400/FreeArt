@@ -71,7 +71,20 @@ document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('clic
   city.setMode(b.dataset.mode);
   b.blur();
 }));
-const worldView = new WorldView(engine, labels, { onFragment: showFragment });
+const worldView = new WorldView(engine, labels, { onFragment: showFragment, onPiece: (w, index) => takeTour(w.id, index) });
+
+// The world's page and its tour are two views of one place: a piece clicked on the page, or
+// "Take the tour", goes into the tour (at that piece, or where you last were in it), and
+// "The whole world" in the tour comes back here.
+let tourWanted = null;
+function takeTour(id, index = null) {
+  const it = city.items.find((x) => x.world.id === id);
+  if (!it) return false;
+  if (index === null && city.lastStop?.id === id) index = city.lastStop.index;
+  tourWanted = { it, index };
+  location.hash = '#/';
+  return true;
+}
 Object.assign(window.freeart, { city, worldView });
 const editor = new Editor({
   onChange: (w) => worldView.setWorld(w),
@@ -258,6 +271,7 @@ function closeStory() {
   $('world-info').classList.remove('is-reading');
 }
 $('wi-story').addEventListener('click', openStory);
+$('wi-tour').addEventListener('click', () => takeTour(currentWorldId));
 $('wi-key').addEventListener('click', () => { const id = currentWorldId, key = id && keyFor(id); if (key) showKey(id, key); });
 $('wi-report').addEventListener('click', async () => {
   const reason = prompt(t('report.ask'));
@@ -360,11 +374,13 @@ function route() {
     $('wi-key').hidden = !w.mine;
     $('wi-report').hidden = w.source !== 'shared' || w.mine;
     $('wi-story').hidden = !w.process;
+    $('wi-tour').hidden = !p || !exhibitItems(w).length;
+    $('wi-tour').textContent = t(city.lastStop?.id === w.id ? 'world.tourOn' : 'world.tour');
     storyWorld = w;
     $('world-info').hidden = false;
     worldView.show(w, { plot: p && plotCell(p.x, p.z) });
     sound.setWorld(w);
-    setHint((w.fragments.length ? t('hint.worldFragments') : t('hint.world')) + (exhibitItems(w).length ? ' · ' + t('hint.lookClose') : ''));
+    setHint((w.fragments.length ? t('hint.worldFragments') : t('hint.world')) + (exhibitItems(w).length ? ' · ' + t('hint.tourPiece') : ''));
     document.title = `${w.title} · Khora`;
     return;
   }
@@ -411,7 +427,8 @@ function showCity() {
   leave('city');
   view = 'city';
   currentWorldId = null;
-  city.show({ fromWorld: from });
+  city.show({ fromWorld: from, tour: tourWanted });
+  tourWanted = null;
   sound.setWorld(null);
   $('city-modes').hidden = false;
   cityHint();

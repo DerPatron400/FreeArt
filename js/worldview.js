@@ -28,8 +28,9 @@ function glow() {
 const strokeKey = (strokes) => (strokes ? strokes.length + ':' + strokes.reduce((a, s) => a + s.pts.length + s.spread + s.tone * 7 + (s.pts[0]?.[0] || 0), 0) : '');
 
 export class WorldView {
-  constructor(engine, labelsRoot, { onFragment } = {}) {
+  constructor(engine, labelsRoot, { onFragment, onPiece } = {}) {
     this.engine = engine;
+    this.onPiece = onPiece || (() => false);
     this.labelsRoot = labelsRoot;
     this.onFragment = onFragment || (() => {});
     this.group = new THREE.Group();
@@ -269,6 +270,9 @@ export class WorldView {
     canvas.addEventListener('click', () => {
       if (!this.canFocus() || e.flight || e.dragDistance >= 6) return;
       const hit = this.pickPiece();
+      // A piece clicked: on to the world's tour, at that piece (or, for a world without a
+      // plot, a close look here).
+      if (hit && !this.focused && this.onPiece(this.world, hit.index)) return;
       if (hit) this.focus(hit);
       else if (this.focused) this.unfocus();
     });

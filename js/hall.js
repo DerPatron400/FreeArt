@@ -62,9 +62,16 @@ export class Hall {
     this.hint = el('p', 'hall-hint mono');
     this.caption.hidden = this.hint.hidden = true;
     // The way out: no wall to find, a doorway opens just where you are.
-    this.leaveButton = el('button', 'btn btn--ghost btn--small hall-leave', t('hall.leave'));
-    this.leaveButton.type = 'button';
-    this.leaveButton.addEventListener('click', () => this.goOut());
+    this.leaveButton = el('div', 'hall-leave');
+    const out = el('button', 'btn btn--ghost btn--small', t('hall.leave'));
+    out.type = 'button';
+    out.addEventListener('click', () => this.goOut());
+    // And the other way of seeing the same world: its page, the whole of it at once (you
+    // come back to the stop you were at).
+    const whole = el('button', 'btn btn--ghost btn--small', t('hall.overview'));
+    whole.type = 'button';
+    whole.addEventListener('click', () => this.toOverview());
+    this.leaveButton.append(whole, out);
     addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.it && !this.exit) { e.stopImmediatePropagation(); this.goOut(); } }, true);
     // Back and on between the stops, and the way onto the tour when you are near its line.
     this.nav = el('div', 'hall-nav');
@@ -111,7 +118,10 @@ export class Hall {
     return { cx: a.x + (x0 + x1) / 2 * k, cz: a.z + (z0 + z1) / 2 * k, w: (x1 - x0) * k, d: (z1 - z0) * k, h: Math.max(it.plot.h, g.max.y + m) * k };
   }
 
-  open(it) {
+  // to: start the tour at this piece (its index), quick: come straight in, without the long flight.
+  open(it, { to = null, quick = false } = {}) {
+    this.target = to;
+    this.quick = quick;
     if (this.it === it) { this.grow(this.scaleFor(it), 1.8); return; }
     if (this.it) this.reset();
     const w = this.city.walker;
@@ -128,6 +138,20 @@ export class Hall {
     // The plot's card steps aside: in here the guide says what each piece is.
     this.city.standing = it.plot;
     this.city.select(null, { quiet: true });
+  }
+
+  // The stop you are at (or nearest), as the piece's index.
+  currentPiece() {
+    if (!this.order.length) return null;
+    const s = this.mode === 'free' ? this.nearestStage() : this.stage % this.order.length;
+    return this.order[s] ?? null;
+  }
+
+  toOverview() {
+    if (!this.it || this.exit) return;
+    const index = this.currentPiece();
+    if (index !== null) this.city.lastStop = { id: this.it.world.id, index };
+    this.city.onEnter(this.it.world);
   }
 
   close() {
@@ -493,6 +517,10 @@ export class Hall {
     if (this.spreadAmt >= 1) {
       this.order = this.plan();
       this.stage = 0; this.dwell = 0;
+      // Come for one piece: straight on to it.
+      const s = this.target == null ? -1 : this.order.indexOf(this.target);
+      if (s >= 0) { this.stage = s; this.rush = true; }
+      this.target = null;
       this.mode = 'guide';
       this.buildPath();
       this.uniforms.uDraw.value = 0;
@@ -543,8 +571,8 @@ export class Hall {
     const w = this.city.walker, e = this.city.engine;
     // The pieces spread out into the dark as the room grows, and gather back as it folds.
     // (Coming in, first the flight around them as they were placed: then they spread.)
-    const spreading = this.goal > 1 && this.at > 0.25 && (this.mode !== 'arrive' || this.arrive.time > this.feel.build) && this.mode !== 'off';
-    this.spreadAmt = Math.max(0, Math.min(1, this.spreadAmt + (spreading ? dt / 4.5 : this.goal > 1 ? 0 : -dt / 1.2)));
+    const spreading = this.goal > 1 && this.at > 0.25 && (this.mode !== 'arrive' || this.quick || this.arrive.time > this.feel.build) && this.mode !== 'off';
+    this.spreadAmt = Math.max(0, Math.min(1, this.spreadAmt + (spreading ? dt / (this.quick ? 2.2 : 4.5) : this.goal > 1 ? 0 : -dt / 1.2)));
     it.exhibit.spread(this.spreadAmt);
     // Grow (or fold), smoothly, around where you came in.
     if (this.at < 1) {

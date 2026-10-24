@@ -385,6 +385,20 @@ export class City {
     return !!p && this.byKey.has(key(p.x, p.z));
   }
 
+  // Into a world's tour from its page: in through the wall facing its street, straight to
+  // the piece asked for (or the start). Asked before the city is ready, it waits for it.
+  tourInto(it, index = null) {
+    if (!it) return;
+    if (!this.active || this.engine.flight) { this.pendingTour = { it, index }; return; }
+    if (this.hall.it) this.hall.reset();
+    if (this.mode === 'tour') this.walker.stopTour(true);
+    if (this.mode !== 'walk') this.setMode('walk');
+    this.select(null, { quiet: true });
+    const p = it.plot, side = Math.sign(streetBy(p).z - p.cz) || 1;
+    this.walker.place(p.cx, p.cz + side * (p.d / 2 - 0.5), side > 0 ? 0 : Math.PI, Math.min(1.6, p.h * 0.5));
+    this.hall.open(it, { to: index, quick: true });
+  }
+
   // Step into a built world, or claim a free plot.
   act(p) {
     const it = this.byKey.get(key(p.x, p.z));
@@ -421,7 +435,8 @@ export class City {
     return !!p && PLOT_BY_KEY.has(key(p.x, p.z)) && !this.byKey.has(key(p.x, p.z));
   }
 
-  async show({ fromWorld, focus } = {}) {
+  async show({ fromWorld, focus, tour } = {}) {
+    if (tour) this.pendingTour = tour;
     this.active = true;
     this.group.visible = true;
     const e = this.engine;
@@ -459,19 +474,28 @@ export class City {
         if (!this.active) return;
         if (this.mode === 'tour') this.mode = 'walk';
         this.setMode(this.mode);
+        this.tourPending();
         return;
       }
       e.camera.position.set(0, 82, 58);
     }
     const goal = w.cameraGoal(new THREE.Vector3());
-    await e.flyTo(this.mode === 'map' ? new THREE.Vector3(0, 19, 27).add(w.pos) : goal, w.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), fromWorld ? 2.2 : 4.6);
+    await e.flyTo(this.mode === 'map' ? new THREE.Vector3(0, 19, 27).add(w.pos) : goal, w.pos.clone().add(new THREE.Vector3(0, 0.8, 0)), tour ? 1.2 : fromWorld ? 2.2 : 4.6);
     if (!this.active) return;
     if (this.mode === 'tour') this.mode = 'walk';
     this.setMode(this.mode);
+    this.tourPending();
+  }
+
+  tourPending() {
+    const p = this.pendingTour;
+    this.pendingTour = null;
+    if (p) this.tourInto(p.it, p.index);
   }
 
   hide() {
     this.active = false;
+    this.pendingTour = null;
     if (this.hall.it) this.hall.reset();
     this.walker.hide();
     this.group.visible = false;
