@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "Rise",
   "g.flow.swirl": "Swirl",
   "g.lightRemove": "Remove this colour",
-  "g.lightReset": "Start again from my things",
+  "g.lightReset": "Take the colours from my world",
   "g.lightHow": "Tap inside the plot to add a colour. Drag a dot to move it; turn the plot to place it nearer or further.",
   "g.lightThis": "This colour:",
   "g.lightNew": "The next colour you add:",

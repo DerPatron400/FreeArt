@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "のぼる",
   "g.flow.swirl": "うずまく",
   "g.lightRemove": "この色を外す",
-  "g.lightReset": "作品の色からやり直す",
+  "g.lightReset": "ワールドから色を取る",
   "g.lightHow": "区画の中をタップすると色を追加できます。点をドラッグして動かし、区画を回すと手前や奥に置けます。",
   "g.lightThis": "この色：",
   "g.lightNew": "次に追加する色：",

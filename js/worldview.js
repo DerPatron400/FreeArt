@@ -103,7 +103,7 @@ export class WorldView {
       const grab = () => {
         e.afterRender.delete(grab);
         let px;
-        const W = 128, H = Math.max(36, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
+        const W = 256, H = Math.max(72, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
         try {
           const c = Object.assign(document.createElement('canvas'), { width: W, height: H }), g = c.getContext('2d', { willReadFrequently: true });
           g.imageSmoothingQuality = 'high';
@@ -141,7 +141,7 @@ export class WorldView {
       o.w += w; o.c[0] += lin(r) * w; o.c[1] += lin(g) * w; o.c[2] += lin(b) * w; o.x += x * w; o.y += y * w;
       total += w;
     }
-    if (total < W * H * 0.004) return null;
+    if (total < 2) return null; // hardly a colour anywhere (a world of greys)
     // Where the colours lie in the picture, spread over the plot (across and up; in depth,
     // the middle): what shows at the left glows at the left, what is high glows high.
     const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;

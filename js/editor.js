@@ -35,7 +35,7 @@ const BLANK = {
 };
 
 export class Editor {
-  constructor({ onChange, onRelease, onDelete, onPaint = () => {}, onPlace, onNear, getRoom, onLight, getAutoLight, getSettingView, onSettingLook }) {
+  constructor({ onChange, onRelease, onDelete, onPaint = () => {}, onPlace, onNear, getRoom, onLight, getAutoLight, getPictureLight, getSettingView, onSettingLook }) {
     this.root = document.getElementById('editor');
     this.form = document.getElementById('editor-form');
     this.list = document.getElementById('fragments-list');
@@ -61,6 +61,7 @@ export class Editor {
       getRoom,
       onLight,
       getAutoLight,
+      getPictureLight,
       getSettingView,
       onSettingLook,
       onDelete: (id) => this.onDelete(id),

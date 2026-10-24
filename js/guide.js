@@ -152,11 +152,12 @@ function recordSound() {
 }
 
 export class Guide {
-  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [], getSettingView = () => null, onSettingLook = () => {} }) {
+  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [], getPictureLight = async () => null, getSettingView = () => null, onSettingLook = () => {} }) {
     this.getSettingView = getSettingView;
     this.onSettingLook = onSettingLook;
     this.onLight = onLight;
     this.getAutoLight = getAutoLight;
+    this.getPictureLight = getPictureLight;
     this.onPlace = onPlace;
     this.onNear = onNear;
     // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
@@ -1220,12 +1221,17 @@ export class Guide {
       el('p', 'g-help', tr('g.lightMoves')), flows, speedL, row);
   }
 
-  // Back to the light the things give by themselves.
+  // Back to the light the world gives by itself: its colours as they show (the plot is
+  // shown full again for a moment, so its picture can be taken), to paint on from there.
   lightReset() {
     delete this.w.light;
     this.lightSeed = null;
     this.changed();
-    if (this.lightOn) { this.lightOn = false; this.startLight(); }
+    if (!this.lightOn) return;
+    this.lightOn = false;
+    this.onLight(null);
+    const again = () => { if (!this.lightOn) this.startLight(); };
+    setTimeout(() => this.getPictureLight().then((light) => { if (light && !this.w.light) this.w.light = light; again(); }, again), 400);
   }
 
   // ---- look and feel ----

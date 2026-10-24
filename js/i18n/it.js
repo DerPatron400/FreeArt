@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "Sale",
   "g.flow.swirl": "Vortice",
   "g.lightRemove": "Togli questo colore",
-  "g.lightReset": "Ricomincia dalle mie cose",
+  "g.lightReset": "Prendi i colori dal mio mondo",
   "g.lightHow": "Tocca dentro il lotto per aggiungere un colore. Trascina un punto per spostarlo; gira il lotto per metterlo più vicino o più lontano.",
   "g.lightThis": "Questo colore:",
   "g.lightNew": "Il prossimo colore che aggiungi:",

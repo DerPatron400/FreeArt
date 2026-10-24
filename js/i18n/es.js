@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "Sube",
   "g.flow.swirl": "Remolino",
   "g.lightRemove": "Quitar este color",
-  "g.lightReset": "Empezar de nuevo desde mis cosas",
+  "g.lightReset": "Tomar los colores de mi mundo",
   "g.lightHow": "Toca dentro de la parcela para añadir un color. Arrastra un punto para moverlo; gira la parcela para ponerlo más cerca o más lejos.",
   "g.lightThis": "Este color:",
   "g.lightNew": "El próximo color que añadas:",

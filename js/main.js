@@ -94,6 +94,7 @@ const editor = new Editor({
   getRoom: () => worldView.room,
   onLight: (opts) => worldView.setLighting(opts),
   getAutoLight: () => worldView.autoLight(),
+  getPictureLight: () => worldView.captureLight(),
   getSettingView: (i) => worldView.exhibit?.settingView(i) || null,
   onSettingLook: (i) => worldView.lookFrom(i),
   onRelease: (w) => release(w),

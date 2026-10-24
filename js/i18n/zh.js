@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "上升",
   "g.flow.swirl": "旋转",
   "g.lightRemove": "去掉这个颜色",
-  "g.lightReset": "从我的作品重新开始",
+  "g.lightReset": "从我的世界取色",
   "g.lightHow": "点按地块内部来添加颜色。拖动圆点来移动它；转动地块，把它放得更近或更远。",
   "g.lightThis": "这个颜色：",
   "g.lightNew": "下一个要添加的颜色：",

@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "Monte",
   "g.flow.swirl": "Tourbillon",
   "g.lightRemove": "Retirer cette couleur",
-  "g.lightReset": "Repartir de mes choses",
+  "g.lightReset": "Prendre les couleurs de mon monde",
   "g.lightHow": "Touche l'intérieur de la parcelle pour ajouter une couleur. Fais glisser un point pour le déplacer ; tourne la parcelle pour le placer plus près ou plus loin.",
   "g.lightThis": "Cette couleur :",
   "g.lightNew": "La prochaine couleur que tu ajoutes :",

@@ -505,7 +505,7 @@ export default {
   "g.flow.rise": "Aufsteigen",
   "g.flow.swirl": "Kreisen",
   "g.lightRemove": "Diese Farbe entfernen",
-  "g.lightReset": "Neu aus meinen Dingen",
+  "g.lightReset": "Farben aus meiner Welt nehmen",
   "g.lightHow": "Tippe ins Grundstück, um eine Farbe hinzuzufügen. Zieh einen Punkt, um ihn zu verschieben; dreh das Grundstück, um ihn näher oder weiter weg zu setzen.",
   "g.lightThis": "Diese Farbe:",
   "g.lightNew": "Die nächste Farbe, die du setzt:",
