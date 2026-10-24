@@ -862,7 +862,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     // The same world with pieces moved, resized or given new motion: true if it could be applied in place.
     relayout(w) {
       const list = exhibitItems(w);
-      if (list.length !== items.length || list.some((m, i) => m.kind !== items[i].kind || m.src !== items[i].src)) return false;
+      if (list.length !== items.length || list.some((m, i) => m.kind !== items[i].kind || m.src !== items[i].src || !!m.show?.setting !== !!items[i].show?.setting)) return false; // a splat that becomes a setting (or stops being one) loads anew
       place(list);
       galleryBox = gallery();
       return true;

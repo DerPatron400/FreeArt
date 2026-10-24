@@ -556,7 +556,7 @@ export class WorldView {
       updateFormLook(this.form, world);
     }
     // Moving, resizing or re-timing a placed thing only re-places it; anything else rebuilds.
-    const buildKey = JSON.stringify(world.build) + world.palette.join() + JSON.stringify(exhibitItems(world).map((m) => [m.kind, m.src?.length, !!m.show, m.show?.flip, m.poem, m.constellation, m.melody, m.sketch?.paths.length, m.build?.pieces.length]));
+    const buildKey = JSON.stringify(world.build) + world.palette.join() + JSON.stringify(exhibitItems(world).map((m) => [m.kind, m.src?.length, !!m.show, m.show?.flip, m.show?.setting, m.poem, m.constellation, m.melody, m.sketch?.paths.length, m.build?.pieces.length]));
     const placeKey = JSON.stringify(exhibitItems(world).map((m) => m.show));
     if ((shapeChanged && !onlyStrokes) || buildKey !== this.buildKey) {
       this.buildKey = buildKey;
