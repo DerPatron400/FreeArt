@@ -141,11 +141,11 @@ export class WorldView {
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
       const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
-      if (hi < 30) continue;
+      if (hi < 70) continue; // the dim haze of stars around is not the world's colour
       // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys and
       // the small stars of the night around do not.
       let hue = -1, w;
-      if (sat < 0.22) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
+      if (sat < 0.3) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
         w = sat * sat * (hi / 255);
         const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
         hue = Math.floor((h / 6) * HUES) % HUES;
@@ -173,7 +173,7 @@ export class WorldView {
     const colour = (o) => { const c = o.c.map((v) => v / o.w), top = Math.max(...c, 1e-4); return hex(c.map((v) => (v / top) * 0.85)); };
     const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
     const used = new Map(), spots = [];
-    const order = zones.map((m, i) => ({ i, m, w: [...m.values()].reduce((a, o) => a + o.w, 0) })).filter((z) => z.w > total * 0.02).sort((a, b) => b.w - a.w);
+    const order = zones.map((m, i) => ({ i, m, w: [...m.values()].reduce((a, o) => a + o.w, 0) })).filter((z) => z.w > total * 0.04).sort((a, b) => b.w - a.w);
     for (const { i, m, w } of order) {
       let best = null, score = -1;
       for (const o of m.values()) {
@@ -184,10 +184,12 @@ export class WorldView {
         const sc = o.w / (1 + 3 * near);
         if (sc > score) { score = sc; best = o; }
       }
-      if (!best) continue;
+      if (!best || best.w < total * 0.015) continue;
       used.set(best.hue, (used.get(best.hue) || 0) + 1);
       const zx = i % GX, zy = Math.floor(i / GX);
-      spots.push({ at: [k2(((zx + 0.5) / GX - 0.5) * 1.6 * room.ax), k2((0.82 - zy * 0.3) * room.h), k2((zx % 2 ? 0.25 : -0.25) * room.az)], c: colour(best), r: k2(Math.max(0.25, Math.min(0.5, room.ax * 0.75))) });
+      const c = colour(best);
+      if (spots.some((o) => o.c === c)) continue; // the same colour twice: the one already there reaches here too
+      spots.push({ at: [k2(((zx + 0.5) / GX - 0.5) * 1.6 * room.ax), k2((0.82 - zy * 0.3) * room.h), k2((zx % 2 ? 0.25 : -0.25) * room.az)], c, r: k2(Math.max(0.25, Math.min(0.5, room.ax * 0.75))) });
     }
     // Colours that show well in the whole picture but led in no zone still glow, smaller.
     const all = new Map();
