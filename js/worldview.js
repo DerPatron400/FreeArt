@@ -135,18 +135,18 @@ export class WorldView {
   // lie side by side and blend into each other instead of one taking over. A colour that
   // already leads elsewhere gives way to the next one in a zone, if that one shows enough.
   lightFromPicture(px, W, H) {
-    const lin = (v) => Math.pow(v / 255, 2.2), HUES = 12, GX = 4, GY = 3;
+    const lin = (v) => Math.pow(v / 255, 2.2), HUES = 24, GX = 4, GY = 3;
     const found = [];
     let total = 0;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
       const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
-      if (hi < 70) continue; // the dim haze of stars around is not the world's colour
+      if (hi < 40 || (hi < 70 && sat < 0.5)) continue; // the dim haze of stars around is not the world's colour (a deep red is)
       // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys and
       // the small stars of the night around do not.
       let hue = -1, w;
       if (sat < 0.3) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
-        w = sat * sat * (hi / 255);
+        w = sat * sat * Math.sqrt(hi / 255); // how strong a colour is counts for more than how bright
         const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
         hue = Math.floor((h / 6) * HUES) % HUES;
       }
@@ -180,7 +180,7 @@ export class WorldView {
         if (o.w < w * 0.06) continue;
         // Near hues count as the same (two blues are one blue); white only as itself.
         let near = 0;
-        for (const [h, k] of used) if (h === o.hue || (h >= 0 && o.hue >= 0 && Math.min((h - o.hue + HUES) % HUES, (o.hue - h + HUES) % HUES) <= 1)) near += k;
+        for (const [h, k] of used) near += h === o.hue ? k : h >= 0 && o.hue >= 0 && Math.min((h - o.hue + HUES) % HUES, (o.hue - h + HUES) % HUES) <= 1 ? k * 0.5 : 0;
         const sc = o.w / (1 + 3 * near);
         if (sc > score) { score = sc; best = o; }
       }
@@ -196,8 +196,7 @@ export class WorldView {
     for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; o.c.forEach((v, k) => { a.c[k] += v; }); }
     let n = 0;
     for (const a of [...all.values()].sort((p, q) => q.w - p.w)) {
-      const near = [...used.keys()].some((h) => h === a.hue || (h >= 0 && a.hue >= 0 && Math.min((h - a.hue + HUES) % HUES, (a.hue - h + HUES) % HUES) <= 1));
-      if (near || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
+      if (used.has(a.hue) || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
       used.set(a.hue, 1);
       spots.push({ at: [k2([-0.3, 0.3, 0][n] * room.ax), k2([0.5, 0.5, 0.3][n] * room.h), k2([0.3, -0.3, 0.35][n] * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
       n++;
