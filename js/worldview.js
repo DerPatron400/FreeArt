@@ -196,8 +196,10 @@ export class WorldView {
     for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; o.c.forEach((v, k) => { a.c[k] += v; }); }
     let n = 0;
     for (const a of [...all.values()].sort((p, q) => q.w - p.w)) {
-      if (used.has(a.hue) || a.w < total * 0.05 || n >= 2 || spots.length >= 12) continue;
-      spots.push({ at: [k2((n ? 0.3 : -0.3) * room.ax), k2(0.5 * room.h), k2((n ? -0.3 : 0.3) * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
+      const near = [...used.keys()].some((h) => h === a.hue || (h >= 0 && a.hue >= 0 && Math.min((h - a.hue + HUES) % HUES, (a.hue - h + HUES) % HUES) <= 1));
+      if (near || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
+      used.set(a.hue, 1);
+      spots.push({ at: [k2([-0.3, 0.3, 0][n] * room.ax), k2([0.5, 0.5, 0.3][n] * room.h), k2([0.3, -0.3, 0.35][n] * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
       n++;
     }
     return spots.length ? { spots, flow: 'drift', speed: 0.5, auto: true } : null;
