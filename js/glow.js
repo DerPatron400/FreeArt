@@ -23,7 +23,8 @@ export function normalizeGlow(o) {
   return { t: 'g', d: o.d, a };
 }
 
-// A glow's colour as one: the average of its cells in linear light, a little richer.
+// A glow's colour as one: the average of its cells in linear light, true to the piece
+// (a black and white photograph gives grey light, a bright painting its own colours).
 export function glowTint(o) {
   let s;
   try { s = atob(o.d); } catch { return null; }
@@ -31,7 +32,21 @@ export function glowTint(o) {
   const c = [0, 0, 0];
   for (let i = 0; i < BYTES; i++) c[i % 3] += linear(s.charCodeAt(i));
   const n = GRID * GRID, l = (c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722) / n;
-  return c.map((v) => Math.max(0, l + (v / n - l) * 1.4));
+  return c.map((v) => Math.max(0, l + (v / n - l) * 1.1));
+}
+
+// The glow in four: the average of each quarter (top left, top right, bottom left, bottom
+// right), so a piece that is half dark sky and half red field lights the plot with both.
+export function glowQuads(o) {
+  let s;
+  try { s = atob(o.d); } catch { return null; }
+  if (s.length !== BYTES) return null;
+  const q = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], h = GRID / 2, n = h * h;
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
+    const c = q[(y < h ? 0 : 2) + (x < h ? 0 : 1)];
+    for (let k = 0; k < 3; k++) c[k] += linear(s.charCodeAt((y * GRID + x) * 3 + k)) / n;
+  }
+  return q;
 }
 
 // ---- the haze over a plot ----

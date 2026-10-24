@@ -3,7 +3,8 @@
 // breathing rim that sheds sparks, wide enough to pass through; you walk on through it
 // without pausing, and behind you it closes again. It is only a ring of light on the
 // wall (the view is never held or covered), white and grey with no colour, and one
-// doorway serves the whole city, so it costs next to nothing.
+// doorway serves the whole city, so it costs next to nothing. From outside, you can see
+// through it into the plot: its pieces floating in a dark of their own.
 import * as THREE from 'three';
 
 const NOISE = /* glsl */`
@@ -25,7 +26,9 @@ void main() {
 // Adapted from the showcase portal: the same outline, draw-on, glitter and grain,
 // without its colours, its glow or the world behind it.
 const FRAG = /* glsl */`
-uniform float uTime, uRadius, uArc, uGlow, uHalf;
+uniform float uTime, uRadius, uArc, uGlow, uHalf, uSee;
+uniform sampler2D uView;
+uniform vec2 uRes;
 varying vec2 vLocal;
 ${NOISE}
 void main() {
@@ -44,6 +47,7 @@ void main() {
   float grain = noise(gp * 34.0 + vec2(uTime * 1.7, -uTime * 1.1)) * 0.65 + noise(gp * 90.0 - uTime * 2.3) * 0.35;
   float edge = smoothstep(-0.28 * R, 0.0, d) * inside;
   float speck = smoothstep(0.5, 0.72, grain + edge * 0.6 - 0.28) * edge * smoothstep(0.62, 0.9, grain);
+  speck *= mix(1.0, smoothstep(-0.1 * R, 0.0, d), uSee); // looking through, the grain keeps to the rim
   float rimW = 0.014 * R + 0.004;
   float rim = exp(-abs(d) / rimW);
   vec2 g = vec2(ang / 6.28318 * 150.0, len / R * 26.0 - uTime * 1.4);
@@ -55,7 +59,10 @@ void main() {
   float a = clamp((rim * 1.2 + speck * 0.9 + glitter * 1.2) * lit + (seed + head * 1.6 * exp(-abs(d) / (rimW * 3.0))) * uGlow, 0.0, 1.0);
   // Nothing may reach the edge of the square it is drawn on.
   a *= 1.0 - smoothstep(0.7, 0.97, max(abs(vLocal.x), abs(vLocal.y)) / uHalf);
-  gl_FragColor = vec4(vec3(0.96, 0.94, 0.9) * a, a);
+  // Through it: the plot's own dark, with its pieces in it (drawn from your eye, see city.js).
+  float vis = inside * uSee;
+  vec3 view = vis > 0.0 ? texture2D(uView, gl_FragCoord.xy / uRes).rgb : vec3(0.0);
+  gl_FragColor = vec4(view * vis * (1.0 - a) + vec3(0.96, 0.94, 0.9) * a, a + vis * (1.0 - a));
 }`;
 
 const SPARK_VERT = /* glsl */`
@@ -82,7 +89,10 @@ export const DOOR_RADIUS = 1.35; // wide enough to walk through
 const SEED = 0.08, N = 400;
 
 export function createDoorway() {
-  const uniforms = { uTime: { value: 0 }, uRadius: { value: SEED }, uArc: { value: 0 }, uGlow: { value: 0 }, uHalf: { value: 1 } };
+  const uniforms = {
+    uTime: { value: 0 }, uRadius: { value: SEED }, uArc: { value: 0 }, uGlow: { value: 0 }, uHalf: { value: 1 },
+    uSee: { value: 0 }, uView: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
+  };
   const blend = { transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor };
   const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, side: THREE.DoubleSide, ...blend }));
   mesh.frustumCulled = false;
@@ -160,5 +170,12 @@ export function createDoorway() {
       if (glow < 0.01 && open <= 0) key = null;
     },
     setViewport(height, pixelRatio) { sparkUniforms.uScale.value = 22 * pixelRatio * (height / 900); },
+    // What shows through it (a picture the size of the screen, drawn from the same eye), and
+    // how much: 0 is only the rim of light.
+    setView(texture, see, width = 1, height = 1) {
+      uniforms.uView.value = texture;
+      uniforms.uSee.value = texture ? see : 0;
+      uniforms.uRes.value.set(width, height);
+    },
   };
 }

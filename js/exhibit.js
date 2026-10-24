@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { createBuild } from './build.js';
 import { SHOWABLE, inkColors, embedFor, constellationLayout, melodyFreq, ctx, pluck } from './media.js';
-import { glowTint, createHaze, HAZE_MAX, knownGlow, keepGlow, glowImage, glowColour, glowModel, glowSplat } from './glow.js';
+import { glowTint, glowQuads, createHaze, HAZE_MAX, knownGlow, keepGlow, glowImage, glowColour, glowModel, glowSplat } from './glow.js';
 
 const PAPER = '#ece4d4';
 const FONT = '"Cormorant Garamond", Georgia, serif';
@@ -27,10 +27,15 @@ function freeObject(obj) {
   });
 }
 
-function onLayer(obj) {
-  obj.traverse((o) => o.layers.set(1));
+function onLayer(obj, layer = 1) {
+  obj.traverse((o) => o.layers.set(layer));
   return obj;
 }
+
+// Seen through a plot's open doorway from outside (see city.js), a plot's pieces are drawn
+// on a layer of their own into the doorway's view, never into the city around it; and only
+// a few of them, never point clouds, so looking in costs little.
+export const PEEK_LAYER = 2, PEEK_MAX = 4;
 
 function tex(canvas) {
   const t = new THREE.CanvasTexture(canvas);
@@ -275,10 +280,11 @@ function videoPiece(m, size, ink) {
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
-// A colour as light for the haze: never too dark to be seen, a little richer than it is.
+// A colour as light for the haze: never too dark to be seen, otherwise as it is (black and
+// white stays black and white; only the brightness of the darkest is lifted).
 function vivid([r, g, b]) {
   const l = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = l < 0.22 ? 0.22 / Math.max(l, 0.01) : 1;
-  return [r, g, b].map((v) => Math.max(0, l * k + (v * k - l * k) * 1.3));
+  return [r, g, b].map((v) => Math.max(0, v * k));
 }
 // An ink colour (#rrggbb) as light for the haze, in linear light.
 const inkTint = (hex) => [1, 3, 5].map((i) => Math.pow(parseInt(hex.slice(i, i + 2), 16) / 255, 2.2));
@@ -294,8 +300,8 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
   const group = new THREE.Group();
   // From afar, the piece is only its colour in the plot's haze (see createExhibit). Never a
   // stand-in: until its glow exists (made the first time the piece loads), it adds nothing.
-  let tint = null;
-  const shine = (o) => { const c = o && glowTint(o); if (c) tint = c; };
+  let tint = null, quads = null;
+  const shine = (o) => { const c = o && glowTint(o); if (c) { tint = c; quads = glowQuads(o); } };
   const known = saved || knownGlow(src);
   shine(known);
   // A piece loaded without a glow makes one, for this visit and for the studio to keep.
@@ -306,6 +312,7 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
     group, solid,
     // Its share of the haze: its colour, and how strongly it still shows there.
     get tint() { return tint; },
+    get quads() { return quads; },
     get haze() { return haze; },
     lazy: {
       heavy, // models and splats wait their turn
@@ -420,6 +427,7 @@ function lightModels() {
   if (modelLight || !host) return;
   modelLight = new THREE.HemisphereLight(0xfff4e0, 0x201810, 2.2);
   modelLight.layers.set(1);
+  modelLight.layers.enable(PEEK_LAYER); // and in the doorway's view
   host.scene.add(modelLight);
 }
 
@@ -875,7 +883,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside } = {}) {
+    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false } = {}) {
       const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
       // At the plot (at: chosen, or the visitor stands by it), or the eye close to it from
       // whichever side: the haze lifts and every piece shows as it is. Stepping well back
@@ -888,6 +896,10 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         else if (d < reveal * 1.7 && revealed) close = true;
       }
       revealed = close;
+      // Looked into through the doorway: the pieces come as if you were in, but stay out of the city.
+      const looking = peek && !revealed, open = revealed || looking;
+      let peekLoads = 0;
+      if (looking) for (const p of pieces) if (p.piece.lazy?.loaded) peekLoads++;
       const want = [];
       for (const p of pieces) {
         const h = p.holder;
@@ -902,9 +914,13 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         // used to, and leaves its glow behind for the rest of the visit.
         // In the city nothing loads from outside, glow or not.
         const early = inside === undefined && !lazy?.drawn && inView > (come ? 0.02 : 0.05);
+        const peekable = looking && current[p.index].kind !== 'splat'; // point clouds never show from outside
         if (lazy && p.held) lazy.load(); // looked at closely: at once
-        else if (lazy && wake && (all || revealed || early)) want.push(p);
-        else if (lazy?.loaded && (lazy.drawn || inside !== undefined) && !all && !p.held && !revealed) lazy.unload();
+        else if (lazy && wake && (all || revealed || early || (peekable && (lazy.loaded || peekLoads < PEEK_MAX)))) want.push(p);
+        else if (lazy?.loaded && (lazy.drawn || inside !== undefined) && !all && !p.held && !revealed && !peekable) lazy.unload();
+        // Drawn into the city (layer 1) or only into the doorway's view (the peek layer).
+        const layer = looking ? PEEK_LAYER : 1;
+        if (p.layer !== layer || (looking && lazy?.loaded)) { onLayer(h, layer); p.layer = layer; }
         if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
@@ -935,8 +951,8 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         if (p.nearMode === 'appear') { k *= Math.max(0.001, near); p.piece.setOpacity?.(near); }
         // In the city, a piece without loading grows in after you have come inside, in turn.
         if (p.tint) {
-          p.show = inside === undefined ? 1 : Math.max(0, Math.min(1, p.show + (revealed && t >= (p.due ??= t + p.index * STAGGER) ? dt / 0.9 : -dt / 0.6)));
-          if (!revealed) p.due = undefined;
+          p.show = inside === undefined ? 1 : Math.max(0, Math.min(1, p.show + (open && t >= (p.due ??= t + p.index * STAGGER) ? dt / 0.9 : -dt / 0.6)));
+          if (!open) p.due = undefined;
           k *= Math.max(0.001, ease(p.show));
           h.visible = p.show > 0.001;
         }
@@ -957,34 +973,53 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
           ry += d * near;
         }
         h.rotation.y = ry;
-        p.piece.update?.(t, dt, { camera, audible, presence, near: revealed ? Math.max(p.nearView, 0.25) : p.nearView });
+        p.piece.update?.(t, dt, { camera, audible, presence, near: open ? Math.max(p.nearView, 0.25) : p.nearView });
       }
       // The pieces come one after another, nearest first, each fading in on its own: never
       // a crowd of loads starting in the same frame.
       if (want.length) {
         for (const p of want) if (p.piece.lazy.loaded) p.piece.lazy.load(); // keep what is already coming
         const rank = (p) => (preferred.includes(p.index) ? 10 - preferred.indexOf(p.index) : 0) + p.nearView;
-        const next = want.filter((p) => !p.piece.lazy.loaded).sort((a, b) => rank(b) - rank(a))[0];
+        const next = want.filter((p) => !p.piece.lazy.loaded && (!looking || peekLoads < PEEK_MAX)).sort((a, b) => rank(b) - rank(a))[0];
         if (next && (all || t >= nextLoad)) { next.piece.lazy.load(); nextLoad = t + STAGGER; }
       }
       if (!haze) return;
       const u = haze.material.uniforms;
+      // The plot's light is made of what is in it: every piece lights the space around it in
+      // its own colours (a picture or film in its four quarters, when there is room for all),
+      // so a plot of black and white photographs glows grey and white, a plot of bright
+      // paintings in their colours, each where it hangs.
       let n = 0;
+      const lit = [];
       for (const p of pieces) {
+        const tint = p.tint || p.piece.tint, w = looking ? (tint ? 1 : 0) : (p.tint ? 1 - p.show : p.piece.haze) * (1 - spread);
+        if (tint && w >= 0.01) lit.push([p, tint, w]);
+      }
+      const own = lit.filter(([p]) => !p.tint).length; // pieces with colours of their own (pictures, films, models...)
+      const pal = own ? 0 : palLights.length;
+      const four = lit.length + own * 3 <= HAZE_MAX - pal;
+      for (const [p, tint, w] of lit) {
         if (n >= HAZE_MAX) break;
-        const tint = p.tint || p.piece.tint, w = (p.tint ? 1 - p.show : p.piece.haze) * (1 - spread);
-        if (!tint || w < 0.01) continue;
         // Bigger pieces reach further into the plot's colour.
-        const r = Math.max(U * 0.12, p.size0 * (p.scale || 1) * 0.9), c = vivid(tint);
-        const q = p.holder.position;
+        const r = Math.max(U * 0.12, palReach * 0.6, p.size0 * (p.scale || 1) * 0.9), q = p.holder.position, quads = !p.tint && four && p.piece.quads;
+        if (quads) {
+          const s = p.size0 * (p.scale || 1);
+          quads.forEach((c, i) => {
+            const v = vivid(c);
+            u.uP.value[n].set(q.x + (i % 2 ? 0.28 : -0.28) * s, q.y + (i < 2 ? 0.22 : -0.22) * s, q.z, r * 0.75);
+            u.uC.value[n++].set(v[0], v[1], v[2], w);
+          });
+          continue;
+        }
+        const c = vivid(tint);
         u.uP.value[n].set(q.x, q.y, q.z, r);
         u.uC.value[n].set(c[0], c[1], c[2], w);
         n++;
       }
-      // The world's own colours stand in the plot too, spread through it, so the whole box is
-      // filled and a plot with few pieces still has all its colours.
+      // A plot whose pieces are only words, drawings and melodies (all in the world's inks)
+      // also has the world's own colours spread through it, so the whole box is filled.
       ambient += ((revealed ? 0 : 1) - ambient) * Math.min(1, dt * (revealed ? 1.5 : 0.8));
-      if (ambient > 0.01) for (let i = 0; i < palLights.length && n < HAZE_MAX; i++, n++) {
+      if (ambient > 0.01) for (let i = 0; i < pal && n < HAZE_MAX; i++, n++) {
         const [x, y, z, c] = palLights[i];
         u.uP.value[n].set(x, y, z, palReach);
         u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8 * (1 - spread));

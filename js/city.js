@@ -6,7 +6,7 @@ import { roman, el, lerp, clamp, rng } from './util.js';
 import { Walker, Visitors } from './walker.js';
 import { createBuild, disposeBuild, formPlacement, buildTop } from './build.js';
 import { createOcean } from './ocean.js';
-import { createExhibit, exhibitTop } from './exhibit.js';
+import { createExhibit, exhibitTop, PEEK_LAYER } from './exhibit.js';
 import { createDoorway, DOOR_RADIUS } from './portal.js';
 import { Hall } from './hall.js';
 import { t } from './i18n.js';
@@ -540,6 +540,7 @@ export class City {
     // Leaving the hall: the doorway opens just before you, wherever you are, and you go through.
     const exit = this.hall.exit;
     if (exit) {
+      this.peek = null;
       this.doorway.setViewport(window.innerHeight, this.engine.renderer.getPixelRatio());
       this.doorway.update(t, dt, { at: exit.door, facing: exit.facing, wall: 'exit', open: exit.open, height: 1 });
       return;
@@ -556,7 +557,7 @@ export class City {
       }
     }
     let open = 0, wall = null, height = 1;
-    if (best && bestD < 3.2) {
+    if (best && bestD < 4.5) {
       const p = best.p, R = Math.min(DOOR_RADIUS, p.h * 0.45, (best.onX ? p.d : p.w) * 0.45);
       height = R / DOOR_RADIUS;
       const y = Math.min(Math.max(w.y, R * 1.05), p.h - R * 1.05);
@@ -571,12 +572,51 @@ export class City {
       }
       // From outside it opens over the last few steps; inside, only right by the wall (just
       // come in, or about to leave), so it closes behind you as you walk on.
-      open = bestD >= 0 ? 1 - Math.min(1, Math.max(0, (bestD - 0.4) / 2.8)) : 1 - Math.min(1, Math.max(0, (-bestD - 0.3) / 1.2));
+      open = bestD >= 0 ? 1 - Math.min(1, Math.max(0, (bestD - 0.4) / 4)) : 1 - Math.min(1, Math.max(0, (-bestD - 0.3) / 1.2));
       open = open * open * (3 - 2 * open);
       wall = best.it.plot.cx + ',' + best.it.plot.cz + (best.onX ? 'x' : 'z') + Math.sign(best.onX ? w.x - p.cx : w.z - p.cz);
     }
+    // Coming up to it from outside, you can already see in (see lookIn()).
+    const peek = best && bestD >= 0 && open > 0.02 && !this.hall.it ? best.it : null;
+    if (peek !== this.peek) this.peekSince = t;
+    this.peek = peek;
+    this.peekOpen = open;
     this.doorway.setViewport(window.innerHeight, this.engine.renderer.getPixelRatio());
     this.doorway.update(t, dt, { at: wall ? at : null, facing, wall, open, height });
+  }
+
+  // The view through the doorway: the plot's pieces as they stand beyond the wall, in a dark
+  // of their own, drawn from your own eye at a fraction of the screen's resolution. Only one
+  // plot is ever looked into, only while its doorway is open, and with only a few of its
+  // pieces (see PEEK_MAX), so the city keeps its pace.
+  lookIn(t) {
+    const e = this.engine, r = e.renderer, it = this.peek;
+    const see = it ? Math.min(1, this.peekOpen * 1.4) * Math.min(1, (t - this.peekSince) / 0.6) : 0;
+    if (!see) { this.doorway.setView(null, 0); return; }
+    // Not drawn at all while the doorway is out of sight.
+    const at = this.doorway.group.children[0].position.clone().project(e.camera);
+    if (at.z > 1 || Math.abs(at.x) > 1.6 || Math.abs(at.y) > 1.6) return;
+    // Quality follows the pace: a slow device gets a coarser view, drawn every other frame.
+    const dt = Math.min(0.1, t - (this.peekLast ?? t));
+    this.peekLast = t;
+    this.peekPace = (this.peekPace ?? 1 / 60) * 0.95 + dt * 0.05;
+    const slow = this.peekPace > 1 / 40;
+    if (slow && (this.peekSkip = !this.peekSkip) && this.peekTarget) return;
+    const size = (this.peekSize ||= new THREE.Vector2());
+    r.getDrawingBufferSize(size);
+    const q = matchMedia('(pointer: coarse)').matches || slow ? 0.35 : 0.5;
+    const w = Math.max(1, Math.round(size.x * q)), h = Math.max(1, Math.round(size.y * q));
+    this.peekTarget ||= new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
+    if (this.peekTarget.width !== w || this.peekTarget.height !== h) this.peekTarget.setSize(w, h);
+    const before = r.getRenderTarget(), mask = e.camera.layers.mask, clear = r.getClearColor(new THREE.Color()), alpha = r.getClearAlpha();
+    r.setRenderTarget(this.peekTarget);
+    r.setClearColor(0x000000, 1);
+    e.camera.layers.set(PEEK_LAYER);
+    r.render(e.scene, e.camera);
+    e.camera.layers.mask = mask;
+    r.setClearColor(clear, alpha);
+    r.setRenderTarget(before);
+    this.doorway.setView(this.peekTarget.texture, see, size.x, size.y);
   }
 
   update(t, dt) {
@@ -687,7 +727,7 @@ export class City {
           else if (!inside && this.hall.it === it) this.hall.close();
           if (!inside && this.hall.leaving === it && !this.hall.exit) this.hall.leaving = null;
         } else it.inside = undefined;
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside });
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside, peek: it === this.peek && !inside });
       }
 
       if (it.label.hidden) continue;
@@ -702,5 +742,6 @@ export class City {
       it.label.classList.toggle('is-hover', !!isHover);
       it.label.style.opacity = hovered && !isHover ? 0.4 : Math.min(1, (60 - dist) / 20);
     }
+    this.lookIn(t);
   }
 }
