@@ -29,9 +29,16 @@ export function glowTint(o) {
   let s;
   try { s = atob(o.d); } catch { return null; }
   if (s.length !== BYTES) return null;
+  // Strong colours count for more than greys, so a colourful piece is not averaged into a
+  // wash (a black and white one, all grey, still gives grey).
   const c = [0, 0, 0];
-  for (let i = 0; i < BYTES; i++) c[i % 3] += linear(s.charCodeAt(i));
-  const n = GRID * GRID, l = (c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722) / n;
+  let n = 0;
+  for (let i = 0; i < BYTES; i += 3) {
+    const r = s.charCodeAt(i), g = s.charCodeAt(i + 1), b = s.charCodeAt(i + 2);
+    const hi = Math.max(r, g, b), sat = hi ? (hi - Math.min(r, g, b)) / hi : 0, w = 0.04 + sat * sat * (hi / 255);
+    c[0] += linear(r) * w; c[1] += linear(g) * w; c[2] += linear(b) * w; n += w;
+  }
+  const l = (c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722) / n;
   return c.map((v) => Math.max(0, l + (v / n - l) * 1.4));
 }
 
@@ -120,7 +127,7 @@ void main() {
       vec3 d = y - at[i];
       float r = uP[i].w;
       float k = r * r / (dot(d, d) + r * r * 0.35); // near lights weigh more, far ones still a little
-      k *= k;
+      k *= k * k; // and each keeps its own colour near it, rather than all blending to one
       col += uC[i].rgb * k;
       lit += uC[i].a * k;
       wsum += k;

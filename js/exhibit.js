@@ -283,7 +283,7 @@ let turn = Promise.resolve();
 // A colour as light for the haze: never too dark to be seen, a little richer than it is.
 function vivid([r, g, b]) {
   const l = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = l < 0.22 ? 0.22 / Math.max(l, 0.01) : 1;
-  return [r, g, b].map((v) => Math.max(0, l * k + (v * k - l * k) * 1.3));
+  return [r, g, b].map((v) => Math.max(0, l * k + (v * k - l * k) * 1.5));
 }
 // Light (linear) back to an ink colour (#rrggbb), for the studio's light to start from.
 const toHex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
@@ -757,17 +757,19 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     // seeds come from its place in the list, so the motion is the same for everyone.
     // A piece that needs no loading (words, drawings, melodies...) still stands in the haze
     // from outside, in the world's own colours, and grows into place once you are inside.
-    const tint = piece.lazy ? null : inkTint(world.palette?.[[1, 0, 2][index % 3]] || ink[index % 3]); // the accent first, then the deep colour, then the light
+    const tint = piece.lazy ? null : inkTint(world.palette?.[[1, 2][index % 2]] || ink[index % 3]); // drawn in the accent and the light colour (the deep one is the dark around them)
     pieces.push({ piece, holder, index, size0: size, seed: index * 1.618, clock: 0, near: 0, tint, show: 1 });
   });
   const roomBox = new THREE.Box3(new THREE.Vector3(-room.w / 2, 0, -room.d / 2), new THREE.Vector3(room.w / 2, room.h, room.d / 2));
   const reveal = Math.max(5, U * 1.2), eye = new THREE.Vector3();
   let revealed = false, nextLoad = 0, ambient = 1, preferred = [];
   const sz = roomBox.getSize(new THREE.Vector3()), palReach = Math.max(sz.x, sz.y, sz.z) * 0.32;
-  const palLights = (world.palette || []).slice(0, 3).map((hex, i) => {
+  // The world's light colours (its accent, its light, the accent again); the deep colour is
+  // the dark it is drawn on, not a light.
+  const palLights = world.palette?.length === 3 ? [1, 2, 1].map((c, i) => {
     const at = [[-0.28, 0.22, 0.2], [0.3, 0.55, -0.22], [-0.05, 0.85, 0.05]][i];
-    return [at[0] * sz.x, at[1] * sz.y, at[2] * sz.z, vivid(inkTint(hex))];
-  });
+    return [at[0] * sz.x, at[1] * sz.y, at[2] * sz.z, vivid(inkTint(world.palette[c])), c];
+  }) : [];
   // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
   const haze = pieces.length || world.palette?.length ? createHaze(roomBox.min, roomBox.max) : null;
   if (haze) group.add(onLayer(haze));
@@ -955,7 +957,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         if (quads) quads.forEach((c, i) => add([(q.x + (i % 2 ? 0.28 : -0.28) * s) / U, Math.max(0.05, (q.y + (i < 2 ? 0.22 : -0.22) * s) / U), q.z / U], c, r * 0.8));
         else if (tint) add([q.x / U, q.y / U, q.z / U], tint, r);
       }
-      palLights.forEach(([x, y, z], i) => add([x / U, y / U, z / U], inkTint(world.palette[i]), palReach / U));
+      palLights.forEach(([x, y, z, , c]) => add([x / U, y / U, z / U], inkTint(world.palette[c]), palReach / U));
       return out;
     },
     update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false, lighting = false } = {}) {
@@ -1115,7 +1117,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         if (ambient > 0.01) for (let i = 0; i < pal && n < HAZE_MAX; i++, n++) {
           const [x, y, z, c] = palLights[i];
           u.uP.value[n].set(x, y, z, palReach);
-          u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8 * (1 - spread));
+          u.uC.value[n].set(c[0], c[1], c[2], ambient * (own ? 0.3 : 0.8) * (1 - spread)); // pieces with colours of their own lead
         }
       }
       u.uSpeed.value = pace;
