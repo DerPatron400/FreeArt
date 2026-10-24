@@ -23,37 +23,41 @@ export function normalizeGlow(o) {
   return { t: 'g', d: o.d, a };
 }
 
-// A glow's colour as one: the average of its cells in linear light, true to the piece
-// (a black and white photograph gives grey light, a bright painting its own colours).
+// A glow's colour as one.
 export function glowTint(o) {
+  const s = cells(o);
+  return s && richMean(s, Array.from({ length: GRID * GRID }, (_, i) => i));
+}
+
+// The glow in four: each quarter (top left, top right, bottom left, bottom right) as one
+// colour, so a piece that is half dark sky and half red field lights the plot with both.
+export function glowQuads(o) {
+  const s = cells(o);
+  if (!s) return null;
+  const h = GRID / 2, q = [[], [], [], []];
+  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) q[(y < h ? 0 : 2) + (x < h ? 0 : 1)].push(y * GRID + x);
+  return q.map((list) => richMean(s, list));
+}
+
+function cells(o) {
   let s;
   try { s = atob(o.d); } catch { return null; }
-  if (s.length !== BYTES) return null;
-  // Strong colours count for more than greys, so a colourful piece is not averaged into a
-  // wash (a black and white one, all grey, still gives grey).
+  return s.length === BYTES ? s : null;
+}
+
+// Cells as one colour in linear light, true to the piece but not washed out: strong
+// colours count for more than greys (a black and white photograph, all grey, still gives
+// grey light; a bright painting its own colours), and the result is a little richer.
+function richMean(s, list) {
   const c = [0, 0, 0];
   let n = 0;
-  for (let i = 0; i < BYTES; i += 3) {
-    const r = s.charCodeAt(i), g = s.charCodeAt(i + 1), b = s.charCodeAt(i + 2);
+  for (const j of list) {
+    const r = s.charCodeAt(j * 3), g = s.charCodeAt(j * 3 + 1), b = s.charCodeAt(j * 3 + 2);
     const hi = Math.max(r, g, b), sat = hi ? (hi - Math.min(r, g, b)) / hi : 0, w = 0.04 + sat * sat * (hi / 255);
     c[0] += linear(r) * w; c[1] += linear(g) * w; c[2] += linear(b) * w; n += w;
   }
   const l = (c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722) / n;
   return c.map((v) => Math.max(0, l + (v / n - l) * 1.4));
-}
-
-// The glow in four: the average of each quarter (top left, top right, bottom left, bottom
-// right), so a piece that is half dark sky and half red field lights the plot with both.
-export function glowQuads(o) {
-  let s;
-  try { s = atob(o.d); } catch { return null; }
-  if (s.length !== BYTES) return null;
-  const q = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], h = GRID / 2, n = h * h;
-  for (let y = 0; y < GRID; y++) for (let x = 0; x < GRID; x++) {
-    const c = q[(y < h ? 0 : 2) + (x < h ? 0 : 1)];
-    for (let k = 0; k < 3; k++) c[k] += linear(s.charCodeAt((y * GRID + x) * 3 + k)) / n;
-  }
-  return q;
 }
 
 // ---- the haze over a plot ----
@@ -138,7 +142,11 @@ void main() {
     float breath = 0.7 + 0.6 * noise(q * 1.7 + rise * 2.0 + vec3(tt * 0.08));
     acc += col * strength * breath * dt;
   }
-  vec3 c = 0.56 * (1.0 - exp(-acc * 0.6 / scale * 3.0)); // never a white glare, however much gathers
+  // Never a white glare, however much gathers: the brightest channel is eased off and the
+  // others with it, so a bright plot keeps its colours instead of running to white.
+  vec3 e = acc * 0.6 / scale * 3.0;
+  float m = max(max(e.r, e.g), max(e.b, 1e-5));
+  vec3 c = e * (0.56 * (1.0 - exp(-m)) / m);
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
