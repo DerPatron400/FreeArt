@@ -620,3 +620,19 @@ body.in-hall .hint { opacity: 0; transition: opacity 0.8s var(--ease); }
 /* Lines in Geist rising in out of a soft blur (see lines.js); the same feel as How to move's rows. */
 .reveal-word { display: inline-block; animation: line-in 0.6s var(--ease) both; }
 @keyframes line-in { from { opacity: 0; transform: translateY(8px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* The studio: undo and redo at hand, and the things as a numbered tour you can drag. */
+.g-undo { display: flex; gap: 6px; margin-right: auto; }
+.g-undo__btn:disabled { opacity: 0.35; cursor: default; }
+.g-card__head { display: flex; align-items: center; gap: 10px; }
+.g-stop { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: var(--paper); font: 600 14px/1 var(--mono, monospace); }
+.g-stop.is-off { background: var(--panel-2); color: var(--muted); }
+.g-card__kind { margin: 0; margin-right: auto; }
+.g-handle { flex: none; width: 36px; height: 36px; border: 0; border-radius: 4px; background: var(--panel-2); color: var(--paper); font-size: 18px; cursor: grab; touch-action: none; }
+.g-handle:active { cursor: grabbing; }
+.g-tour .g-card { transition: transform 0.18s var(--ease); }
+.g-tour .g-card.is-dragging { transition: none; z-index: 2; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); }
+.g-tour-help { margin: 0 0 8px; }
+/* Undo stays in reach while the page scrolls, just under the site's own bar. */
+.guide__top { position: sticky; top: 76px; z-index: 3; margin: 0 -12px; padding: 8px 12px; border-radius: 6px; background: rgba(12, 13, 18, 0.82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+@media (max-width: 720px) { .guide__top { top: 8px; } }

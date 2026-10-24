@@ -25,6 +25,15 @@ const SHOW_FIRST = 6; // the first few things float in the city on their own
 const AUDIO_MAX = 8e6, VIDEO_MAX = 40e6, MODEL_MAX = 25e6, SPLAT_MAX = 30e6; // bytes, for files from the device (the server's limits)
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+// A copy of a world for the history: objects and lists are new, the text inside (pictures
+// and sounds are long text) is shared, so keeping many steps back costs little.
+function snapshot(v) {
+  if (Array.isArray(v)) return v.map(snapshot);
+  if (v && typeof v === 'object') { const o = {}; for (const k in v) o[k] = snapshot(v[k]); return o; }
+  return v;
+}
+const HISTORY = 60;
+
 function button(text, cls = 'g-btn') {
   const b = el('button', cls, text);
   b.type = 'button';
@@ -170,6 +179,67 @@ export class Guide {
     this.root = el('div', 'guide');
     this.root.hidden = true;
     root.prepend(this.root);
+    // Undo and redo, with the usual keys (inside a text field the field's own undo comes first).
+    window.addEventListener('keydown', (e) => {
+      if (this.root.hidden || !(e.ctrlKey || e.metaKey) || e.altKey) return;
+      if (/^(INPUT|TEXTAREA)$/.test(document.activeElement?.tagName) && document.activeElement.type !== 'range' && document.activeElement.type !== 'checkbox') return;
+      const k = e.key.toLowerCase();
+      if (k === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
+      else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); this.redo(); }
+    });
+  }
+
+  // ---- undo ----
+
+  // Every change is remembered once things settle (a word typed, a piece dragged): the
+  // state before it goes into the past, so one Undo takes back one whole action.
+  remember() {
+    clearTimeout(this.settle);
+    this.settle = setTimeout(() => this.commit(), 450);
+  }
+
+  commit() {
+    clearTimeout(this.settle);
+    this.settle = null;
+    const now = snapshot(this.w);
+    if (JSON.stringify(now) === this.lastText) return;
+    if (this.last) { this.past.push(this.last); if (this.past.length > HISTORY) this.past.shift(); }
+    this.last = now;
+    this.lastText = JSON.stringify(now);
+    this.future = [];
+    this.syncUndo();
+  }
+
+  undo() {
+    if (this.settle) this.commit();
+    if (!this.past.length) return;
+    this.future.push(this.last);
+    this.restore(this.past.pop());
+  }
+
+  redo() {
+    if (this.settle) this.commit();
+    if (!this.future.length) return;
+    this.past.push(this.last);
+    this.restore(this.future.pop());
+  }
+
+  restore(state) {
+    this.last = state;
+    this.lastText = JSON.stringify(state);
+    this.w = snapshot(state);
+    this.stopPlace();
+    const y = this.root.scrollTop;
+    this.onChange(this.w);
+    this.render();
+    this.root.scrollTop = y;
+    this.syncUndo();
+  }
+
+  syncUndo() {
+    if (!this.undoBtn) return;
+    this.undoBtn.disabled = !this.past.length && !this.settle;
+    this.redoBtn.disabled = !this.future.length;
   }
 
   load(world, plotLabel, { editing = false } = {}) {
@@ -178,6 +248,10 @@ export class Guide {
     this.w = structuredClone(world);
     this.plotLabel = plotLabel;
     this.editing = editing;
+    this.past = []; this.future = [];
+    this.last = snapshot(this.w);
+    this.lastText = JSON.stringify(this.last);
+    clearTimeout(this.settle); this.settle = null;
     this.render();
   }
 
@@ -187,7 +261,9 @@ export class Guide {
   }
 
   changed() {
+    this.remember();
     this.onChange(this.w);
+    this.syncUndo();
     this.showSpace?.();
     for (const list of this.syncs.values()) for (const sync of list) sync();
     if (this.placing) this.syncPlace();
@@ -207,7 +283,15 @@ export class Guide {
     top.append(el('p', 'guide__kicker', this.plotLabel ? tr('g.yourPlot', { plot: this.plotLabel }) : tr('g.yourWorld')));
     const full = button(tr('g.workshop'), 'guide__full');
     full.addEventListener('click', () => this.onWorkshop(this.w));
-    top.append(full);
+    // Undo and redo stay at hand at the top while you scroll.
+    const undoBar = el('div', 'g-undo');
+    this.undoBtn = button('↶ ' + tr('g.undoIt'), 'g-btn g-btn--soft g-undo__btn');
+    this.redoBtn = button('↷ ' + tr('g.redo'), 'g-btn g-btn--soft g-undo__btn');
+    this.undoBtn.title = tr('g.undoKeys');
+    this.undoBtn.addEventListener('click', () => this.undo());
+    this.redoBtn.addEventListener('click', () => this.redo());
+    undoBar.append(this.undoBtn, this.redoBtn);
+    top.append(undoBar, full);
 
     const name = el('input', 'g-input g-input--name');
     Object.assign(name, { value: this.w.title === 'Untitled world' ? '' : this.w.title, placeholder: tr('g.untitled'), maxLength: 60 });
@@ -240,6 +324,7 @@ export class Guide {
       chapter(3, tr('g.step3'), tr('g.step3Help')), this.particles(),
       chapter(4, tr('g.step4')), this.finish());
     this.root.replaceChildren(page);
+    this.syncUndo();
   }
 
   // ---- the shelf of tools ----
@@ -555,7 +640,9 @@ export class Guide {
     done.addEventListener('click', () => this.stopPlace());
     const row = el('div', 'g-choice');
     row.append(view, done);
-    p.append(el('p', 'g-help', tr('g.placeHelp')), ...axes.map((a) => a.l), centre, size, turn, face,
+    // What everyone needs first (where, how big, how high); the finer things folded away.
+    const fine = el('details', 'g-more');
+    fine.append(el('summary', null, tr('g.fineTune')), axes[0].l, axes[2].l, turn, face,
       el('p', 'g-help', tr('g.motion')), motion, el('p', 'g-help', tr('g.whenNear')), near, el('p', 'g-help', tr('g.preview')), preview);
     if (m.kind === 'splat') {
       const flip = el('label', 'g-check');
@@ -563,28 +650,19 @@ export class Guide {
       Object.assign(f, { type: 'checkbox', checked: !!s.flip });
       f.addEventListener('change', () => { if (f.checked) s.flip = true; else delete s.flip; this.changed(); });
       flip.append(f, ' ' + tr('g.flip'));
-      p.append(flip);
+      fine.append(flip);
     }
-    p.append(row);
+    p.append(el('p', 'g-help', tr('g.placeHelp')), size, axes[1].l, centre, fine, row);
     return p;
   }
 
   // Ready-made arrangements for everything the plot shows.
+  // One button: each press tries another arrangement; Undo goes back to the one before.
   arrangeBar() {
     const bar = el('div', 'g-arrange');
-    bar.append(el('p', 'g-help', tr('g.arrange')));
-    const pills = (ids) => {
-      const row = el('div', 'g-choice');
-      for (const id of ids) {
-        const b = button(tr('arrange.' + id), 'g-pill' + (id === 'surprise' ? ' g-pill--lead' : ''));
-        b.addEventListener('click', () => this.arrange(id));
-        row.append(b);
-      }
-      return row;
-    };
-    const more = el('details', 'g-more');
-    more.append(el('summary', null, tr('g.moreArrange')), pills(['centre', 'ring', 'row', 'stack', 'orbit', 'floor', 'street']));
-    bar.append(pills(['surprise', 'spiral', 'bloom', 'wave', 'arch', 'knot']), el('p', 'g-help g-help--quiet', tr('g.arrangeHint')), more);
+    const b = button(tr('g.arrangeMe'), 'g-btn g-btn--soft');
+    b.addEventListener('click', () => this.arrange('surprise'));
+    bar.append(b, el('p', 'g-help g-help--quiet', tr('g.arrangeHint')));
     return bar;
   }
 
@@ -685,12 +763,66 @@ export class Guide {
   // ---- what has been made ----
 
   thingsList() {
-    this.thingsEl = el('div', 'g-cards');
+    this.tourHelp = el('p', 'g-help g-tour-help', tr('g.tourHelp'));
+    this.thingsEl = el('div', 'g-cards g-tour');
     this.arrangeEl = this.arrangeBar();
     this.drawThings();
     const wrap = el('div');
-    wrap.append(this.thingsEl, this.arrangeEl);
+    wrap.append(this.tourHelp, this.thingsEl, this.arrangeEl);
     return wrap;
+  }
+
+  // A thing's stop on the tour (1, 2, 3...), or 0 when it does not stand in the plot.
+  tourStop(m) {
+    const list = this.things().filter((x) => SHOWABLE.includes(x.kind));
+    const marked = list.filter((x) => x.show);
+    const shown = marked.length ? marked : list.slice(0, 5);
+    return shown.indexOf(m) + 1;
+  }
+
+  // Moving a thing to another place in the list moves it in the tour.
+  moveThing(from, to) {
+    const list = this.things();
+    if (to < 0 || to >= list.length || to === from) return;
+    const [m] = list.splice(from, 1);
+    list.splice(to, 0, m);
+    this.changed();
+    this.drawThings();
+    this.thingsEl.children[to]?.querySelector('.g-handle')?.focus();
+  }
+
+  // Drag by the handle (mouse, finger or pen): the card follows, the others make room.
+  dragThing(e, card, k) {
+    e.preventDefault();
+    const cards = [...this.thingsEl.children];
+    const tops = cards.map((c) => c.getBoundingClientRect());
+    const y0 = e.clientY;
+    let to = k;
+    card.classList.add('is-dragging');
+    card.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const dy = ev.clientY - y0;
+      card.style.transform = `translateY(${dy}px)`;
+      const mid = tops[k].top + tops[k].height / 2 + dy;
+      to = k;
+      for (let i = 0; i < cards.length; i++) {
+        if (i < k && mid < tops[i].top + tops[i].height / 2) { to = i; break; }
+        if (i > k && mid > tops[i].top + tops[i].height / 2) to = i;
+      }
+      const h = tops[k].height + 12;
+      cards.forEach((c, i) => { if (c !== card) c.style.transform = i >= to && i < k ? `translateY(${h}px)` : i <= to && i > k ? `translateY(${-h}px)` : ''; });
+    };
+    const up = () => {
+      card.removeEventListener('pointermove', move);
+      card.removeEventListener('pointerup', up);
+      card.removeEventListener('pointercancel', up);
+      cards.forEach((c) => { c.style.transform = ''; });
+      card.classList.remove('is-dragging');
+      if (to !== k) this.moveThing(k, to);
+    };
+    card.addEventListener('pointermove', move);
+    card.addEventListener('pointerup', up);
+    card.addEventListener('pointercancel', up);
   }
 
   drawThings() {
@@ -702,6 +834,20 @@ export class Guide {
   card(m, k, list) {
     const c = el('div', 'g-card');
     const redraw = () => this.drawThings();
+    // The head of the card: its stop on the tour, and the handle to drag it elsewhere.
+    const head = el('div', 'g-card__head');
+    const stop = this.tourStop(m);
+    head.append(el('span', 'g-stop' + (stop ? '' : ' is-off'), stop ? String(stop) : '–'), el('span', 'g-help g-card__kind', stop ? tr('g.stopN', { n: stop }) : tr('g.notInTour')));
+    const handle = button('⠿', 'g-handle');
+    handle.setAttribute('aria-label', tr('g.dragHelp'));
+    handle.title = tr('g.dragHelp');
+    handle.addEventListener('pointerdown', (e) => this.dragThing(e, c, k));
+    handle.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowUp') { e.preventDefault(); this.moveThing(k, k - 1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); this.moveThing(k, k + 1); }
+    });
+    if (list.length > 1) head.append(handle);
+    c.append(head);
     if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; c.append(img); }
     if (m.kind === 'sketch') {
       c.append(sketchSvg(m.sketch, this.w.palette, { animate: false }));
@@ -764,7 +910,7 @@ export class Guide {
     const show = el('label', 'g-check');
     const cb = el('input');
     Object.assign(cb, { type: 'checkbox', checked: !!m.show });
-    cb.addEventListener('change', () => { m.show = cb.checked; this.changed(); });
+    cb.addEventListener('change', () => { m.show = cb.checked; this.changed(); redraw(); });
     show.append(cb, ' ' + tr('g.float'));
     tools.append(show);
     if (SHOWABLE.includes(m.kind)) {
@@ -772,12 +918,10 @@ export class Guide {
       place.addEventListener('click', () => (this.placing?.m === m ? this.stopPlace() : this.startPlace(m)));
       tools.append(place);
     }
-    const move = (d) => { const j = k + d; if (j < 0 || j >= list.length) return; [list[k], list[j]] = [list[j], list[k]]; this.changed(); redraw(); };
-    const up = button('↑', 'g-icon'); up.setAttribute('aria-label', tr('g.moveUp')); up.disabled = k === 0; up.addEventListener('click', () => move(-1));
-    const down = button('↓', 'g-icon'); down.setAttribute('aria-label', tr('g.moveDown')); down.disabled = k === list.length - 1; down.addEventListener('click', () => move(1));
+    // Removing needs no question: Undo brings it back.
     const rm = button(tr('g.remove'), 'g-card__remove');
-    rm.addEventListener('click', () => { if (this.placing?.m === m) this.stopPlace(); list.splice(k, 1); this.changed(); redraw(); });
-    tools.append(up, down, rm);
+    rm.addEventListener('click', () => { if (this.placing?.m === m) this.stopPlace(); list.splice(k, 1); this.changed(); redraw(); toast(tr('g.removedUndo'), 5000); });
+    tools.append(rm);
     c.append(tools);
     if (this.placing?.m === m) c.append(this.placePanel(m));
     return c;
@@ -800,7 +944,7 @@ export class Guide {
       const tools = el('div', 'g-card__tools');
       tools.append(el('span', 'g-help', tr('g.textHelp')));
       const rm = button(tr('g.remove'), 'g-card__remove');
-      rm.addEventListener('click', () => { frs.splice(k, 1); this.changed(); this.drawTexts(); });
+      rm.addEventListener('click', () => { frs.splice(k, 1); this.changed(); this.drawTexts(); toast(tr('g.removedUndo'), 5000); });
       tools.append(rm);
       box.append(t, wrap, tools);
       return box;
@@ -817,28 +961,18 @@ export class Guide {
     this.syncs.set('looks', []);
     const look = this.lookControls('looks');
     const fill = button(tr('g.fill'), 'g-btn g-btn--main g-fill');
-    const back = button(tr('g.fillUndo'), 'g-btn g-btn--soft');
-    back.hidden = true;
     fill.addEventListener('click', () => {
       const box = this.getRoom()?.form;
       if (!box) return;
       this.stopPaint();
-      if (back.hidden) this.beforeFill = structuredClone(this.w.form); // the first press remembers how it was
       this.w.form = { ...this.w.form, type: 'hand', strokes: fillStrokes(box, { limit: STROKE_REACH }), density: Math.max(this.w.form.density, 0.75) }; // a whole plot wants plenty of particles
       delete this.w.form.hidden;
-      back.hidden = false;
-      this.changed();
-    });
-    back.addEventListener('click', () => {
-      if (this.beforeFill) this.w.form = this.beforeFill;
-      this.beforeFill = null;
-      back.hidden = true;
       this.changed();
     });
     const draw = button(tr('g.stars'), 'g-btn g-btn--soft');
     draw.addEventListener('click', () => this.togglePaint());
     const row = el('div', 'g-choice');
-    row.append(back, draw);
+    row.append(draw);
     this.paintPanel = el('div', 'g-paint');
     this.paintPanel.hidden = true;
 
