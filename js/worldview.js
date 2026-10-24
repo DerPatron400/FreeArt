@@ -116,53 +116,73 @@ export class WorldView {
     });
   }
 
+  // Like a screen's ambient light: the picture is cut into zones (four across, three up),
+  // and each zone of the plot glows with the colour that shows most in it, so the colours
+  // lie side by side and blend into each other instead of one taking over. A colour that
+  // already leads elsewhere gives way to the next one in a zone, if that one shows enough.
   lightFromPicture(px, W, H) {
     const lin = (v) => Math.pow(v / 255, 2.2), HUES = 12, GX = 4, GY = 3;
-    const bins = new Map();
+    const found = [];
     let total = 0;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
       const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
       if (hi < 30) continue;
-      // Bright white (a lit page, pale stone) counts too, as one light of its own; dim greys
-      // and the small stars of the night around do not.
-      if (sat < 0.22) {
-        if (hi < 170) continue;
-        const w = 0.12 * (hi / 255), o = bins.get(-1) || bins.set(-1, { w: 0, c: [0, 0, 0], x: 0, y: 0 }).get(-1);
-        o.w += w; o.c[0] += lin(r) * w; o.c[1] += lin(g) * w; o.c[2] += lin(b) * w; o.x += x * w; o.y += y * w;
-        total += w;
-        continue;
+      // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys and
+      // the small stars of the night around do not.
+      let hue = -1, w;
+      if (sat < 0.22) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
+        w = sat * sat * (hi / 255);
+        const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
+        hue = Math.floor((h / 6) * HUES) % HUES;
       }
-      const w = sat * sat * (hi / 255);
-      let h = 0;
-      if (hi !== lo) h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
-      const key = Math.floor((h / 6) * HUES) % HUES + HUES * (Math.min(GX - 1, Math.floor((x / W) * GX)) + GX * Math.min(GY - 1, Math.floor((y / H) * GY)));
-      const o = bins.get(key) || bins.set(key, { w: 0, c: [0, 0, 0], x: 0, y: 0 }).get(key);
-      o.w += w; o.c[0] += lin(r) * w; o.c[1] += lin(g) * w; o.c[2] += lin(b) * w; o.x += x * w; o.y += y * w;
+      found.push([x, y, hue, w, lin(r), lin(g), lin(b)]);
       total += w;
     }
     if (total < 2) return null; // hardly a colour anywhere (a world of greys)
-    // Where the colours lie in the picture, spread over the plot (across and up; in depth,
-    // the middle): what shows at the left glows at the left, what is high glows high.
-    const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
-    const kept = [...bins.values()].filter((o) => o.w >= total * 0.03);
-    const xs = kept.map((o) => o.x / o.w), ys = kept.map((o) => o.y / o.w);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
-    const place = (x, y) => {
-      const u = x1 - x0 > W * 0.05 ? (x - x0) / (x1 - x0) : 0.5, v = y1 - y0 > H * 0.05 ? (y - y0) / (y1 - y0) : 0.5;
-      return [k2((u - 0.5) * 1.5 * room.ax), k2((0.15 + (1 - v) * 0.7) * room.h), 0];
+    // The part of the picture the colours fill (the few strays at its edges left out).
+    const span = (k) => {
+      const list = found.map((f) => [f[k], f[3]]).sort((a, b) => a[0] - b[0]);
+      let acc = 0, lo = list[0][0], hi = list[list.length - 1][0];
+      for (const [v, w] of list) { acc += w; if (acc < total * 0.03) lo = v; if (acc <= total * 0.97) hi = v; }
+      return [lo, Math.max(hi, lo + 1)];
     };
+    const [x0, x1] = span(0), [y0, y1] = span(1);
+    const zones = Array.from({ length: GX * GY }, () => new Map());
+    for (const [x, y, hue, w, r, g, b] of found) {
+      const zx = Math.max(0, Math.min(GX - 1, Math.floor(((x - x0) / (x1 - x0)) * GX))), zy = Math.max(0, Math.min(GY - 1, Math.floor(((y - y0) / (y1 - y0)) * GY)));
+      const m = zones[zy * GX + zx], o = m.get(hue) || m.set(hue, { hue, w: 0, c: [0, 0, 0] }).get(hue);
+      o.w += w; o.c[0] += r * w; o.c[1] += g * w; o.c[2] += b * w;
+    }
     const hex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
-    const spots = [], seen = new Set();
-    for (const o of [...bins.values()].sort((a, b) => b.w - a.w)) {
-      if (spots.length >= 10 || o.w < total * 0.03) break;
-      // Its colour at full strength (how bright the plot glows is the haze's own matter).
-      const c = o.c.map((v) => v / o.w), l = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722, rich = c, top = Math.max(...rich, 1e-4);
-      const col = hex(rich.map((v) => (v / top) * 0.85));
-      const at = place(o.x / o.w, o.y / o.w);
-      if (seen.has(col)) continue;
-      seen.add(col);
-      spots.push({ at, c: col, r: Math.round(Math.min(0.75, 0.25 + Math.sqrt(o.w / total) * 0.6) * 100) / 100 });
+    // A colour at full strength (how bright the plot glows is the haze's own matter).
+    const colour = (o) => { const c = o.c.map((v) => v / o.w), top = Math.max(...c, 1e-4); return hex(c.map((v) => (v / top) * 0.85)); };
+    const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
+    const used = new Map(), spots = [];
+    const order = zones.map((m, i) => ({ i, m, w: [...m.values()].reduce((a, o) => a + o.w, 0) })).filter((z) => z.w > total * 0.02).sort((a, b) => b.w - a.w);
+    for (const { i, m, w } of order) {
+      let best = null, score = -1;
+      for (const o of m.values()) {
+        if (o.w < w * 0.06) continue;
+        // Near hues count as the same (two blues are one blue); white only as itself.
+        let near = 0;
+        for (const [h, k] of used) if (h === o.hue || (h >= 0 && o.hue >= 0 && Math.min((h - o.hue + HUES) % HUES, (o.hue - h + HUES) % HUES) <= 1)) near += k;
+        const sc = o.w / (1 + 3 * near);
+        if (sc > score) { score = sc; best = o; }
+      }
+      if (!best) continue;
+      used.set(best.hue, (used.get(best.hue) || 0) + 1);
+      const zx = i % GX, zy = Math.floor(i / GX);
+      spots.push({ at: [k2(((zx + 0.5) / GX - 0.5) * 1.6 * room.ax), k2((0.82 - zy * 0.3) * room.h), k2((zx % 2 ? 0.25 : -0.25) * room.az)], c: colour(best), r: k2(Math.max(0.25, Math.min(0.5, room.ax * 0.75))) });
+    }
+    // Colours that show well in the whole picture but led in no zone still glow, smaller.
+    const all = new Map();
+    for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; o.c.forEach((v, k) => { a.c[k] += v; }); }
+    let n = 0;
+    for (const a of [...all.values()].sort((p, q) => q.w - p.w)) {
+      if (used.has(a.hue) || a.w < total * 0.05 || n >= 2 || spots.length >= 12) continue;
+      spots.push({ at: [k2((n ? 0.3 : -0.3) * room.ax), k2(0.5 * room.h), k2((n ? -0.3 : 0.3) * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
+      n++;
     }
     return spots.length ? { spots, flow: 'drift', speed: 0.5, auto: true } : null;
   }

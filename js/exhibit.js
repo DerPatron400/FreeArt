@@ -1122,6 +1122,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       }
       u.uSpeed.value = pace;
       u.uFlow.value = flow;
+      u.uBlend.value = painted ? 1 : 0;
       u.uCount.value = n;
       u.uTime.value = t;
       haze.visible = n > 0 && spread < 0.99 && (!revealed || lighting || ambient > 0.01); // the hall is a black void: only the pieces

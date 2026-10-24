@@ -82,6 +82,7 @@ uniform vec3 uEye;
 uniform float uTime;
 uniform float uSpeed;
 uniform float uFlow;
+uniform float uBlend;
 uniform int uCount;
 uniform vec4 uP[${16}];
 uniform vec4 uC[${16}];
@@ -131,7 +132,7 @@ void main() {
       vec3 d = y - at[i];
       float r = uP[i].w;
       float k = r * r / (dot(d, d) + r * r * 0.35); // near lights weigh more, far ones still a little
-      k *= k * k; // and each keeps its own colour near it, rather than all blending to one
+      k *= uBlend > 0.5 ? k : k * k; // each keeps its own colour near it (painted light: softer, the colours run into each other)
       col += uC[i].rgb * k;
       lit += uC[i].a * k;
       wsum += k;
@@ -155,7 +156,7 @@ void main() {
 // The haze for a box from min to max (in the space of whatever it is added to).
 export function createHaze(min, max) {
   const uniforms = {
-    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uTime: { value: 0 }, uSpeed: { value: 1 }, uFlow: { value: 0 }, uCount: { value: 0 },
+    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uTime: { value: 0 }, uSpeed: { value: 1 }, uFlow: { value: 0 }, uBlend: { value: 0 }, uCount: { value: 0 },
     uP: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
     uC: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
   };
