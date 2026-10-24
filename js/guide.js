@@ -21,7 +21,7 @@ export const FEELINGS = [
   { id: 'deep', name: 'Night', palette: ['#120c2e', '#6a4fc0', '#ecdcff'], form: { type: 'nebula', energy: 0.38, density: 0.7 }, sound: { root: 65.41, mood: 'dark' } },
 ];
 
-const SHOW_FIRST = 6; // the first few things float in the city on their own
+const SHOW_FIRST = 16; // the first things added stand in the plot (and on the tour) on their own
 const AUDIO_MAX = 8e6, VIDEO_MAX = 40e6, MODEL_MAX = 25e6, SPLAT_MAX = 30e6; // bytes, for files from the device (the server's limits)
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -249,6 +249,7 @@ export class Guide {
     this.plotLabel = plotLabel;
     this.editing = editing;
     this.past = []; this.future = [];
+    this.picked = null;
     this.last = snapshot(this.w);
     this.lastText = JSON.stringify(this.last);
     clearTimeout(this.settle); this.settle = null;
@@ -764,71 +765,111 @@ export class Guide {
 
   thingsList() {
     this.tourHelp = el('p', 'g-help g-tour-help', tr('g.tourHelp'));
+    this.stripEl = el('div', 'g-strip');
     this.thingsEl = el('div', 'g-cards g-tour');
     this.arrangeEl = this.arrangeBar();
     this.drawThings();
     const wrap = el('div');
-    wrap.append(this.tourHelp, this.thingsEl, this.arrangeEl);
+    wrap.append(this.tourHelp, this.stripEl, this.thingsEl, this.arrangeEl);
     return wrap;
   }
 
   // A thing's stop on the tour (1, 2, 3...), or 0 when it does not stand in the plot.
   tourStop(m) {
+    return this.tourItems().indexOf(m) + 1;
+  }
+
+  // The things on the tour, in its order.
+  tourItems() {
     const list = this.things().filter((x) => SHOWABLE.includes(x.kind));
     const marked = list.filter((x) => x.show);
-    const shown = marked.length ? marked : list.slice(0, 5);
-    return shown.indexOf(m) + 1;
+    return marked.length ? marked : list.slice(0, 5);
   }
 
-  // Moving a thing to another place in the list moves it in the tour.
-  moveThing(from, to) {
-    const list = this.things();
-    if (to < 0 || to >= list.length || to === from) return;
-    const [m] = list.splice(from, 1);
-    list.splice(to, 0, m);
+  // A stop moved to another place on the tour: the other things keep their places in the list.
+  moveStop(from, to) {
+    const tour = this.tourItems(), list = this.things();
+    if (to < 0 || to >= tour.length || to === from) return;
+    const slots = tour.map((m) => list.indexOf(m));
+    const [m] = tour.splice(from, 1);
+    tour.splice(to, 0, m);
+    slots.forEach((slot, i) => { list[slot] = tour[i]; });
+    this.picked = null;
     this.changed();
     this.drawThings();
-    this.thingsEl.children[to]?.querySelector('.g-handle')?.focus();
+    this.stripEl.children[to]?.focus();
   }
 
-  // Drag by the handle (mouse, finger or pen): the card follows, the others make room.
-  dragThing(e, card, k) {
-    e.preventDefault();
-    const cards = [...this.thingsEl.children];
-    const tops = cards.map((c) => c.getBoundingClientRect());
-    const y0 = e.clientY;
-    let to = k;
-    card.classList.add('is-dragging');
-    card.setPointerCapture(e.pointerId);
+  // The tour at a glance: one small numbered picture per stop, all in view however many
+  // there are. Drag one to another place, or tap it and then tap where it should go.
+  drawStrip() {
+    const tour = this.tourItems();
+    this.stripEl.hidden = tour.length < 2;
+    this.stripHint ||= el('p', 'g-help g-strip__hint');
+    this.stripHint.textContent = this.picked != null ? tr('g.pickedHint') : '';
+    this.stripEl.replaceChildren(...tour.map((m, i) => this.stripTile(m, i, tour.length)), this.stripHint);
+  }
+
+  stripTile(m, i, n) {
+    const tile = button('', 'g-tile-stop' + (this.picked === i ? ' is-picked' : ''));
+    tile.setAttribute('aria-label', tr('g.stopN', { n: i + 1 }) + (m.caption ? ' · ' + m.caption : ''));
+    const face = el('span', 'g-tile-stop__face');
+    if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; img.draggable = false; face.append(img); }
+    else if (m.kind === 'sketch') face.append(sketchSvg(m.sketch, this.w.palette, { animate: false }));
+    else if (m.kind === 'poem') face.append(el('i', null, (m.poem?.lines || [])[0] || '…'));
+    else face.append(el('b', null, { video: '▶', audio: '♫', melody: '♪', model: '3D', splat: '3D', constellation: '✦', sculpture: '◆' }[m.kind] || '•'));
+    tile.append(el('span', 'g-tile-stop__n', String(i + 1)), face, el('span', 'g-tile-stop__cap', m.caption || ''));
+    tile.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); this.moveStop(i, i - 1); }
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); this.moveStop(i, i + 1); }
+    });
+    tile.addEventListener('pointerdown', (e) => this.dragStop(e, tile, i));
+    return tile;
+  }
+
+  dragStop(e, tile, i) {
+    if (e.button > 0) return;
+    const tiles = [...this.stripEl.querySelectorAll('.g-tile-stop')];
+    const boxes = tiles.map((t) => t.getBoundingClientRect());
+    const x0 = e.clientX, y0 = e.clientY;
+    let dragging = false, to = i;
+    tile.setPointerCapture(e.pointerId);
     const move = (ev) => {
-      const dy = ev.clientY - y0;
-      card.style.transform = `translateY(${dy}px)`;
-      const mid = tops[k].top + tops[k].height / 2 + dy;
-      to = k;
-      for (let i = 0; i < cards.length; i++) {
-        if (i < k && mid < tops[i].top + tops[i].height / 2) { to = i; break; }
-        if (i > k && mid > tops[i].top + tops[i].height / 2) to = i;
-      }
-      const h = tops[k].height + 12;
-      cards.forEach((c, i) => { if (c !== card) c.style.transform = i >= to && i < k ? `translateY(${h}px)` : i <= to && i > k ? `translateY(${-h}px)` : ''; });
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (!dragging && Math.hypot(dx, dy) < 8) return;
+      dragging = true;
+      tile.classList.add('is-dragging');
+      tile.style.transform = `translate(${dx}px, ${dy}px)`;
+      // The stop under the middle of the dragged picture is where it goes.
+      const cx = boxes[i].left + boxes[i].width / 2 + dx, cy = boxes[i].top + boxes[i].height / 2 + dy;
+      let best = Infinity;
+      boxes.forEach((b, j) => { const d = Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy); if (d < best) { best = d; to = j; } });
+      tiles.forEach((t, j) => t.classList.toggle('is-target', j === to && j !== i));
     };
     const up = () => {
-      card.removeEventListener('pointermove', move);
-      card.removeEventListener('pointerup', up);
-      card.removeEventListener('pointercancel', up);
-      cards.forEach((c) => { c.style.transform = ''; });
-      card.classList.remove('is-dragging');
-      if (to !== k) this.moveThing(k, to);
+      tile.removeEventListener('pointermove', move);
+      tile.removeEventListener('pointerup', up);
+      tile.removeEventListener('pointercancel', up);
+      tile.style.transform = '';
+      tile.classList.remove('is-dragging');
+      tiles.forEach((t) => t.classList.remove('is-target'));
+      if (dragging) { if (to !== i) this.moveStop(i, to); return; }
+      // A tap: pick it up, then a tap on another stop puts it there.
+      if (this.picked == null) this.picked = i;
+      else if (this.picked === i) this.picked = null;
+      else return this.moveStop(this.picked, i);
+      this.drawStrip();
     };
-    card.addEventListener('pointermove', move);
-    card.addEventListener('pointerup', up);
-    card.addEventListener('pointercancel', up);
+    tile.addEventListener('pointermove', move);
+    tile.addEventListener('pointerup', up);
+    tile.addEventListener('pointercancel', up);
   }
 
   drawThings() {
     const list = this.things();
     if (this.arrangeEl) this.arrangeEl.hidden = list.filter((m) => m.show && SHOWABLE.includes(m.kind)).length < 2; // arranging needs at least two
     this.thingsEl.replaceChildren(...list.map((m, k) => this.card(m, k, list)));
+    this.drawStrip();
   }
 
   card(m, k, list) {
@@ -838,15 +879,6 @@ export class Guide {
     const head = el('div', 'g-card__head');
     const stop = this.tourStop(m);
     head.append(el('span', 'g-stop' + (stop ? '' : ' is-off'), stop ? String(stop) : '–'), el('span', 'g-help g-card__kind', stop ? tr('g.stopN', { n: stop }) : tr('g.notInTour')));
-    const handle = button('⠿', 'g-handle');
-    handle.setAttribute('aria-label', tr('g.dragHelp'));
-    handle.title = tr('g.dragHelp');
-    handle.addEventListener('pointerdown', (e) => this.dragThing(e, c, k));
-    handle.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp') { e.preventDefault(); this.moveThing(k, k - 1); }
-      if (e.key === 'ArrowDown') { e.preventDefault(); this.moveThing(k, k + 1); }
-    });
-    if (list.length > 1) head.append(handle);
     c.append(head);
     if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; c.append(img); }
     if (m.kind === 'sketch') {
