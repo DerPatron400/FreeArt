@@ -350,6 +350,8 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
       },
     },
     setOpacity(a) { seen = a; },
+    // A splat used as a setting: where it was seen from (its sharpest view), in its own space.
+    get eye() { return obj?.eye || null; },
     update(t, dt, info) {
       obj?.update?.(dt, info);
       // The real piece fades in out of the haze, and its light in the haze gives way.
@@ -530,7 +532,17 @@ function splatPiece(m, size) {
     const obj = new THREE.Group();
     obj.add(mesh);
     const core = coreBox(mesh);
-    fitInto(mesh, core || mesh.getBoundingBox(true), size);
+    // As a setting it is not a thing on a stand but the place around the others: its ground
+    // spread over the plot from edge to edge, floor on the floor, and the point it was seen
+    // from (the file's origin, where it is sharpest) kept, for the tour to stand at.
+    let eye = null;
+    if (show?.setting) {
+      const box = (core || mesh.getBoundingBox(true)).clone().applyMatrix4(new THREE.Matrix4().makeRotationFromQuaternion(mesh.quaternion));
+      const sz = box.getSize(new THREE.Vector3()), k = size / (Math.max(sz.x, sz.z) || 1);
+      mesh.scale.setScalar(k);
+      mesh.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2).multiplyScalar(k);
+      eye = mesh.position.clone();
+    } else fitInto(mesh, core || mesh.getBoundingBox(true), size);
     // What lies beyond the scene's middle (sky, stray splats) fades out softly, so a
     // whole place stays inside its plot instead of fogging the street.
     if (core) {
@@ -542,7 +554,7 @@ function splatPiece(m, size) {
       mesh.add(edit);
     }
     learn?.(glowSplat(mesh, core));
-    return { object: obj, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
+    return { object: obj, eye, free: () => { mesh.removeFromParent(); mesh.dispose(); sparkForget(S); }, setOpacity: (a) => { mesh.opacity = a; } };
   }, { src, glow: m.glow });
 }
 
@@ -776,8 +788,9 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     for (const p of pieces) {
       const m = list[p.index];
       const show = m.show === true ? { size: 0.3, motion: 'orbit' } : m.show;
-      p.motion = show.at ? show.motion : 'orbit';
-      p.nearMode = show.near || 'none';
+      p.setting = m.kind === 'splat' && !!show.setting;
+      p.motion = p.setting ? 'still' : show.at ? show.motion : 'orbit';
+      p.nearMode = p.setting ? 'none' : show.near || 'none';
       p.turn = typeof show.turn === 'number' ? show.turn : null;
       p.scale = (show.size * U) / p.size0;
       if (show.at) {
@@ -800,16 +813,33 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
   // and falling, so that going from one to the next is a real journey with depth around it.
   const gallery = () => {
     const hash = (n) => { const x = Math.sin(n * 91.345 + 7.13) * 43758.5453; return x - Math.floor(x); };
-    let heading = hash(pieces.length) * Math.PI * 2, prev = 0;
+    let heading = hash(pieces.length) * Math.PI * 2, prev = 0, room = null;
     const at = new THREE.Vector3(), out = [];
     pieces.forEach((p, i) => {
-      const s = p.size0 * p.scale;
+      // A setting is a room of its own on the way: the pieces after it (in the tour's order)
+      // stay inside it just as the maker placed them there, around its point of view.
+      if (room && !p.setting) {
+        p.gallery = room.gallery.clone().add(p.base).sub(room.base);
+        p.room = room.index;
+        out.push(p.gallery);
+        return;
+      }
+      p.room = null;
+      const s = p.setting ? p.size0 * p.scale * 0.75 : p.size0 * p.scale;
       if (i) {
-        heading += (hash(i) - 0.5) * 2.2;
+        heading += (hash(i) - 0.5) * (p.setting || room ? 0.6 : 2.2);
         const step = 1.15 * (prev + s) + U * 0.12;
         at.x += Math.cos(heading) * step;
         at.z += Math.sin(heading) * step;
       }
+      if (p.setting) {
+        p.gallery = new THREE.Vector3(at.x, 0, at.z).add(p.base);
+        room = p;
+        prev = s;
+        out.push(p.gallery);
+        return;
+      }
+      room = null;
       const side = (i % 2 ? 1 : -1) * (0.35 + hash(i + 40) * 0.5) * s;
       p.gallery = new THREE.Vector3(at.x - Math.sin(heading) * side, Math.max(s * 0.7, mid + (hash(i + 80) - 0.4) * s * 1.6), at.z + Math.cos(heading) * side);
       out.push(p.gallery);
@@ -824,7 +854,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     for (const p of pieces) box.expandByPoint(p.gallery.clone().addScalar(p.size0 * p.scale)).expandByPoint(p.gallery.clone().addScalar(-p.size0 * p.scale));
     return box;
   };
-  let galleryBox = gallery(), spread = 0;
+  let galleryBox = gallery(), spread = 0, focusSetting = -1;
   const look = new THREE.Vector3(), cube = new THREE.Box3(), at = new THREE.Vector3(), ws = new THREE.Vector3();
   const ease = (x) => x * x * (3 - 2 * x);
   return {
@@ -882,13 +912,33 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     // for a guided tour through the plot.
     spots() {
       const k = group.getWorldScale(ws).x;
-      return pieces.map((p) => ({ index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid }));
+      return pieces.map((p) => {
+        const s = { index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid, room: p.room ?? null };
+        // A setting: the guide stands where it was seen from, looking the way it looked.
+        if (p.setting) {
+          s.setting = true;
+          const e = p.piece.eye;
+          s.eye = e ? p.holder.localToWorld(e.clone()) : null;
+          s.forward = new THREE.Vector3(0, 0, -1).applyQuaternion(p.holder.getWorldQuaternion(new THREE.Quaternion())).setY(0).normalize();
+        }
+        return s;
+      });
     },
     // How far the pieces have spread out into the hall (0: in their plot, 1: the gallery),
     // and the room the gallery takes (in the plot's own units).
     spread(v) { spread = v; },
     galleryBox() { return galleryBox; },
     galleryAt(index) { return pieces.find((p) => p.index === index)?.gallery || new THREE.Vector3(); },
+    // Which setting shows in the plot (the studio shows the one being worked on).
+    showSetting(index) { focusSetting = index; },
+    // A setting's point of view in plot units (x, z from the middle, y from the ground) and
+    // the way it looks, once it has loaded: for placing things in front of it.
+    settingView(index) {
+      const p = pieces.find((x) => x.index === index && x.setting), e = p?.piece.eye;
+      if (!e) return null;
+      const r = p.turn || 0, at = e.clone().applyAxisAngle(new THREE.Vector3(0, 1, 0), r).multiplyScalar(p.scale).add(p.base).divideScalar(U);
+      return { at: at.toArray(), forward: [-Math.sin(r), -Math.cos(r)] };
+    },
     // These pieces load before the others (the one a tour shows now, and the next).
     prefer(list) { preferred = list; },
     hold(index) { for (const p of pieces) p.held = p.index === index; },
@@ -926,8 +976,12 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       let peekLoads = 0;
       if (looking) for (const p of pieces) if (p.piece.lazy?.loaded) peekLoads++;
       const want = [];
+      // Settings stand in the same plot, one over the other: until the hall spreads them out
+      // into rooms, only one is there (the first, or the one the studio is looking at).
+      const firstSetting = pieces.find((p) => p.setting)?.index ?? -1, shownSetting = pieces.some((p) => p.setting && p.index === focusSetting) ? focusSetting : firstSetting;
       for (const p of pieces) {
         const h = p.holder;
+        const away = p.setting && spread < 0.3 && p.index !== shownSetting;
         // How much of the view the piece fills (films play once it is large enough).
         // Nothing loads before the visitor has come in (wake); the studio shows everything (all).
         let inView = 1;
@@ -940,6 +994,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         // In the city nothing loads from outside, glow or not.
         const early = inside === undefined && !lazy?.drawn && inView > (come ? 0.02 : 0.05);
         const peekable = looking && current[p.index].kind !== 'splat'; // point clouds never show from outside
+        if (away && !all) { h.visible = false; continue; } // (the studio still loads it, unseen, to know its view)
         if (lazy && p.held) lazy.load(); // looked at closely: at once
         else if (lazy && wake && (all || revealed || early || (peekable && (lazy.loaded || peekLoads < PEEK_MAX)))) want.push(p);
         else if (lazy?.loaded && (lazy.drawn || inside !== undefined) && !all && !p.held && !revealed && !peekable) lazy.unload();
@@ -964,7 +1019,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         // In the hall: drawn out of their places into the gallery, the first ones first.
         if (spread > 0) {
           const g = ease(Math.max(0, Math.min(1, spread * 1.6 - p.index * 0.6 / Math.max(1, pieces.length))));
-          h.position.lerp(look.copy(p.gallery).setY(p.gallery.y + Math.sin(c * 0.45) * p.size0 * p.scale * 0.04), g);
+          h.position.lerp(look.copy(p.gallery).setY(p.gallery.y + (p.setting ? 0 : Math.sin(c * 0.45) * p.size0 * p.scale * 0.04)), g);
         }
         // 'rise': resting low and small until someone comes, then lifting into place.
         if (p.nearMode === 'rise') {
@@ -984,6 +1039,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         h.scale.setScalar(k);
         if (lighting) h.visible = false; // painting the light: the plot stands empty
         else if (!p.tint) h.visible = true;
+        if (p.setting) { h.visible = !away && !lighting; h.rotation.y = p.turn || 0; p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; } // a setting stays as it was seen
         // Facing: a set turn, slowly sway or spin around it, or (unset) face whoever looks.
         let ry;
         if (p.motion === 'spin' || ((p.piece.spin || p.piece.solid) && p.turn === null)) ry = (p.turn || 0) + c * 0.25;

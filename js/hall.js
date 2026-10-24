@@ -274,6 +274,10 @@ export class Hall {
   // In the gallery you come to each piece from the one before, so the way between them is
   // the journey, and what comes later stands further off in the dark.
   viewpoint(spot, sway = 0, out = new THREE.Vector3(), from = null) {
+    // In a setting you stand where it was seen from (so it stays sharp), and only lean a
+    // little toward each piece in it.
+    const room = this.roomOf(spot);
+    if (room) return spot.setting ? out.copy(room.eye) : out.copy(room.eye).lerp(spot.at, 0.18);
     const b = this.bounds(this.it), f = this.feel, cam = this.city.engine.camera;
     const centre = from || new THREE.Vector3(b.cx, b.h * 0.45, b.cz);
     const dir = centre.clone().sub(spot.at).setY(0);
@@ -340,6 +344,14 @@ export class Hall {
     return spots.get(this.order[(stage - 1 + n) % n])?.at || null;
   }
 
+  // The setting a spot stands in (or is), once its point of view is known.
+  roomOf(spot) {
+    if (spot.setting) return spot.eye ? spot : null;
+    if (spot.room == null) return null;
+    const room = this.spotMap().get(spot.room);
+    return room?.eye ? room : null;
+  }
+
   spotMap() {
     return new Map(this.it.exhibit.spots().map((s) => [s.index, s]));
   }
@@ -384,7 +396,10 @@ export class Hall {
     const next = this.order[(this.stage + 1) % this.order.length];
     this.it.exhibit.prefer([spot.index, next]);
     // A slow sway around the piece while you look at it.
-    const target = this.viewpoint(spot, Math.sin(this.sway) * f.sway, undefined, this.stage ? this.before(this.stage % this.order.length, spots) : w.pos);
+    const room = this.roomOf(spot);
+    const target = this.viewpoint(spot, room ? 0 : Math.sin(this.sway) * f.sway, undefined, this.stage ? this.before(this.stage % this.order.length, spots) : w.pos);
+    // What to look at: the piece, or (a setting) the way it was seen.
+    const look = spot.setting && room ? room.eye.clone().addScaledVector(room.forward, 10).setY(room.eye.y) : spot.at;
     // A smooth glide: a spring with no overshoot, its speed kept gentle.
     const om = this.rush ? f.glide * 2.6 : f.glide; // clicked to: quick, still without overshoot
     const acc = target.clone().sub(w.pos).multiplyScalar(om * om).addScaledVector(this.speed, -2 * om);
@@ -395,18 +410,19 @@ export class Hall {
     w.vel.copy(this.speed);
     // Look at the piece (unless you are looking around yourself just now).
     if (!this.freeLook()) {
-      const yaw = Math.atan2(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
+      const yaw = Math.atan2(w.pos.x - look.x, w.pos.z - look.z);
       let dy = yaw - w.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
       w.yaw += dy * damp(1.6, dt);
-      const flat = Math.hypot(w.pos.x - spot.at.x, w.pos.z - spot.at.z);
-      const pitch = Math.atan2(w.pos.y - spot.at.y, Math.max(0.5, flat)) + f.pitch;
+      const flat = Math.hypot(w.pos.x - look.x, w.pos.z - look.z);
+      const pitch = Math.atan2(w.pos.y - look.y, Math.max(0.5, flat)) + f.pitch;
       w.pitch += (pitch - w.pitch) * damp(1.2, dt);
     }
     // Guided, you see through your own eyes: nothing of you stands between you and the piece.
     w.dist += (EYE - w.dist) * damp(1.5, dt);
     // Arrived: stay a while, then on to the next.
-    const here = w.pos.distanceTo(target) < Math.max(0.35, spot.size * 0.2) && this.speed.length() < Math.max(0.6, spot.size * 0.3);
-    if (this.rush && w.pos.distanceTo(target) < Math.max(1, spot.size * 0.6)) { this.rush = false; this.say(spot); } // its words, right as you get there
+    const sz = room ? Math.min(spot.size, 1.5) : spot.size; // in a setting: right at its point of view
+    const here = w.pos.distanceTo(target) < Math.max(0.35, sz * 0.2) && this.speed.length() < Math.max(0.6, sz * 0.3);
+    if (this.rush && w.pos.distanceTo(target) < Math.max(1, sz * 0.6)) { this.rush = false; this.say(spot); } // its words, right as you get there
     if (here || this.dwell > 0) {
       this.dwell += dt;
       this.sway += dt * 0.22;

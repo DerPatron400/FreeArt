@@ -152,7 +152,9 @@ function recordSound() {
 }
 
 export class Guide {
-  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [] }) {
+  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [], getSettingView = () => null, onSettingLook = () => {} }) {
+    this.getSettingView = getSettingView;
+    this.onSettingLook = onSettingLook;
     this.onLight = onLight;
     this.getAutoLight = getAutoLight;
     this.onPlace = onPlace;
@@ -655,6 +657,23 @@ export class Guide {
     const fine = el('details', 'g-more');
     fine.append(el('summary', null, tr('g.fineTune')), axes[0].l, axes[2].l, turn, face,
       el('p', 'g-help', tr('g.motion')), motion, el('p', 'g-help', tr('g.whenNear')), near, el('p', 'g-help', tr('g.preview')), preview);
+    // A splat can be the place itself: its ground filling the plot, your things inside it,
+    // and the tour standing where it was seen from.
+    let role = null;
+    if (m.kind === 'splat') {
+      role = el('div', 'g-setting');
+      const as = pills(['thing', 'setting'], 'g.splatAs.', s.setting ? 'setting' : 'thing', (id) => this.setSetting(m, id === 'setting'));
+      role.append(el('p', 'g-help', tr('g.splatAs')), as);
+      if (s.setting) {
+        const fill = button(tr('g.settingFill'), 'g-btn g-btn--main');
+        fill.addEventListener('click', () => this.fillSetting(m));
+        const look = button(tr('g.settingLook'), 'g-btn g-btn--soft');
+        look.addEventListener('click', () => this.onSettingLook(exhibitItems(this.w).indexOf(m)));
+        const r2 = el('div', 'g-choice');
+        r2.append(fill, look);
+        role.append(el('p', 'g-help g-help--quiet', tr('g.settingHelp')), r2);
+      }
+    }
     if (m.kind === 'splat') {
       const flip = el('label', 'g-check');
       const f = el('input');
@@ -663,8 +682,83 @@ export class Guide {
       flip.append(f, ' ' + tr('g.flip'));
       fine.append(flip);
     }
-    p.append(el('p', 'g-help', tr('g.placeHelp')), size, axes[1].l, centre, fine, row);
+    if (s.setting) p.append(role, size, centre, fine, row); // a setting stands on the ground, filling the plot
+    else p.append(...(role ? [role] : []), el('p', 'g-help', tr('g.placeHelp')), size, axes[1].l, centre, fine, row);
     return p;
+  }
+
+  setSetting(m, on) {
+    const room = this.getRoom() || { ax: 0.5, az: 0.5, h: 1 }, s = this.placed(m);
+    if (on) {
+      Object.assign(s, { setting: true, at: [0, 0, 0], size: round(Math.min(3, Math.max(room.ax, room.az) * 2)), motion: 'still' });
+      if (typeof s.turn !== 'number') s.turn = 0;
+      delete s.near;
+    } else {
+      delete s.setting;
+      Object.assign(s, { at: [0, Math.min(0.5, room.h * 0.45), 0], size: 0.5, motion: 'float' });
+    }
+    this.changed();
+    this.drawThings();
+    this.syncPlace();
+  }
+
+  // Your things into a setting, in front of where it was seen from: the stops after it on the
+  // tour (the first setting also takes those before it, and goes to the front), on a gentle
+  // arc across its view, near enough to see well and turned to you.
+  fillSetting(m) {
+    const tour = this.tourItems(), list = this.things();
+    // With several settings: your things shared out among them, each its fair part, in
+    // the tour's order (setting, its things, the next setting, its things...).
+    const settings = tour.filter((x) => x.show?.setting);
+    if (settings.length > 1) {
+      const views = settings.map((x) => this.getSettingView(exhibitItems(this.w).indexOf(x)));
+      if (views.some((v) => !v)) return toast(tr('g.settingWait'));
+      const rest = tour.filter((x) => !x.show?.setting), order = [];
+      let from = 0;
+      settings.forEach((x, i) => {
+        const take = Math.round(((i + 1) * rest.length) / settings.length) - from;
+        const part = rest.slice(from, from + take);
+        from += take;
+        order.push(x, ...part);
+        this.arc(x, views[i], part);
+      });
+      const slots = tour.map((x) => list.indexOf(x));
+      slots.forEach((slot, j) => { list[slot] = order[j]; });
+      this.changed();
+      this.drawThings();
+      return toast(tr('g.settingFilled', { n: rest.length }));
+    }
+    const view = this.getSettingView(exhibitItems(this.w).indexOf(m));
+    if (!view) return toast(tr('g.settingWait'));
+    let i = tour.indexOf(m);
+    if (i > 0 && tour.findIndex((x) => x.show?.setting) === i) {
+      const slots = tour.map((x) => list.indexOf(x));
+      tour.splice(i, 1);
+      tour.unshift(m);
+      slots.forEach((slot, j) => { list[slot] = tour[j]; });
+      i = 0;
+    }
+    const members = [];
+    for (let j = i + 1; j < tour.length && !tour[j].show?.setting; j++) members.push(tour[j]);
+    if (!members.length) return toast(tr('g.settingEmpty'));
+    this.arc(m, view, members);
+    this.changed();
+    this.drawThings();
+    toast(tr('g.settingFilled', { n: members.length }));
+  }
+
+  // Things on a gentle arc across a setting's view, near enough to see well, turned to you.
+  arc(m, view, members) {
+    const s = this.placed(m), r = Math.max(0.12, 0.2 * s.size), n = members.length;
+    const [fx, fz] = view.forward, [ex, ey, ez] = view.at;
+    members.forEach((x, j) => {
+      const a = n === 1 ? 0 : -0.75 + (1.5 * j) / (n - 1);
+      const dx = fx * Math.cos(a) - fz * Math.sin(a), dz = fx * Math.sin(a) + fz * Math.cos(a);
+      const t = this.placed(x);
+      t.at = [round(ex + dx * r), round(Math.max(0.02, ey + (j % 2 ? 0.03 : -0.02) * s.size)), round(ez + dz * r)];
+      t.size = round(Math.min(t.size, r * 0.55));
+      delete t.turn; // facing whoever looks
+    });
   }
 
   // Ready-made arrangements for everything the plot shows.

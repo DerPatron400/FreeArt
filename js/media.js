@@ -122,12 +122,14 @@ function normalizeShow(v) {
   if (v === true) return true;
   if (!v || typeof v !== 'object') return false;
   const at = Array.isArray(v.at) && v.at.length === 3 ? [clamp(+v.at[0] || 0, -1, 1), clamp(+v.at[1] || 0, 0, 3), clamp(+v.at[2] || 0, -1, 1)] : null;
-  const out = { size: clamp(typeof v.size === 'number' ? v.size : 0.32, 0.05, 1.5), motion: MOTIONS.includes(v.motion) ? v.motion : 'float' };
+  const out = { size: clamp(typeof v.size === 'number' ? v.size : 0.32, 0.05, v.setting === true ? 3 : 1.5), motion: MOTIONS.includes(v.motion) ? v.motion : 'float' };
   if (at) out.at = at.map((x) => Math.round(x * 1000) / 1000);
   // A fixed facing (radians about the vertical); without it flat things face whoever looks.
   if (typeof v.turn === 'number' && isFinite(v.turn)) out.turn = Math.round(Math.atan2(Math.sin(v.turn), Math.cos(v.turn)) * 1000) / 1000;
   if (NEAR.includes(v.near) && v.near !== 'none') out.near = v.near;
   if (v.flip === true) out.flip = true;
+  // A splat as the place around the other things (see exhibit.js), not a thing in it.
+  if (v.setting === true) out.setting = true;
   return out;
 }
 

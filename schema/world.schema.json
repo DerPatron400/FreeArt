@@ -450,6 +450,10 @@
                         "flip": {
                           "type": "boolean",
                           "description": "Splats only: keep the file's own up direction (most splat files need the default turn-over)."
+                        },
+                        "setting": {
+                          "type": "boolean",
+                          "description": "Splats only: the splat is the place around the other things, not a thing in it. Its ground fills the plot (size = its width in plot widths, up to 3), and the tour stands at the point it was captured from (the file's origin), looking the way it looked. The things after it in the tour stand inside it."
                         }
                       }
                     }

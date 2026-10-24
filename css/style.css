@@ -649,3 +649,4 @@ body.in-hall .hint { opacity: 0; transition: opacity 0.8s var(--ease); }
 .g-tile-stop__face i { padding: 4px; font-size: 10px; line-height: 1.2; text-align: center; color: var(--paper); overflow: hidden; }
 .g-tile-stop__cap { font-size: 10px; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-height: 12px; pointer-events: none; }
 .g-strip__hint { grid-column: 1 / -1; margin: 0; min-height: 1em; color: var(--paper); }
+.g-setting { margin-bottom: 10px; }

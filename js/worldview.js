@@ -71,6 +71,7 @@ export class WorldView {
     c.enabled = !opts || !!opts.turning;
     c.autoRotate = !opts && !this.preview;
     document.body.classList.toggle('is-placing', !!opts);
+    this.exhibit?.showSetting(opts ? opts.index : -1); // a setting being placed is the one the plot shows
     if (!opts) this.clearMarker();
   }
 
@@ -151,6 +152,18 @@ export class WorldView {
       const at = this.lightFromScreen(ev.clientX, ev.clientY, this.lightToWorld(mid));
       if (at) this.lighting.onAdd?.(at);
     });
+  }
+
+  // Stand where a setting was seen from, looking the way it looked (its sharpest view).
+  lookFrom(index, tries = 40) {
+    clearTimeout(this.lookWait);
+    const s = this.exhibit?.spots().find((x) => x.index === index && x.setting);
+    // Still loading (or just rebuilt): look once it is there.
+    if (!s?.eye) { if (tries > 0) this.lookWait = setTimeout(() => this.lookFrom(index, tries - 1), 250); return; }
+    this.exhibit.showSetting(index);
+    const e = this.engine;
+    e.controls.autoRotate = false;
+    e.flyTo(s.eye.clone(), s.eye.clone().addScaledVector(s.forward, 4), 1.6);
   }
 
   // Show how it behaves from afar (0) or with a visitor close by (1).
