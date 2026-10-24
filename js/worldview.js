@@ -105,16 +105,20 @@ export class WorldView {
         // The whole plot in view, from the side you look at it from and level with it, for
         // this one picture (wherever the camera happens to be, close to one piece or not).
         const cam = e.camera, was = { p: cam.position.clone(), q: cam.quaternion.clone() };
-        const r = this.room || { ax: 0.5, az: 0.5, h: 1 }, mid = this.lightToWorld([0, r.h / 2, 0]);
-        const reach = this.lightToWorld([r.ax, r.h, r.az]).distanceTo(this.lightToWorld([-r.ax, 0, -r.az])) / 2;
+        // Framed on the pieces themselves (the plot's empty room around them would leave
+        // each only a few dim pixels), or the whole plot if nothing is placed.
+        const r = this.room || { ax: 0.5, az: 0.5, h: 1 }, box = new THREE.Box3();
+        for (const o of this.exhibit.spots()) if (o.size > 0) box.union(new THREE.Box3().setFromCenterAndSize(o.at, new THREE.Vector3().setScalar(o.size)));
+        if (box.isEmpty()) { box.expandByPoint(this.lightToWorld([r.ax, r.h, r.az])); box.expandByPoint(this.lightToWorld([-r.ax, 0, -r.az])); }
+        const mid = box.getCenter(new THREE.Vector3()), reach = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
         const dir = cam.getWorldDirection(new THREE.Vector3()).setY(0);
         if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
-        cam.position.copy(mid).addScaledVector(dir.normalize(), -reach / Math.sin(THREE.MathUtils.degToRad(cam.fov) / 2) * 1.05);
+        cam.position.copy(mid).addScaledVector(dir.normalize(), -reach / Math.sin(THREE.MathUtils.degToRad(cam.fov) / 2) * 0.9);
         cam.lookAt(mid);
         cam.updateMatrixWorld();
         let px;
         try { e.composer.render(); } catch {}
-        const W = 256, H = Math.max(72, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
+        const W = 384, H = Math.max(108, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
         try {
           const c = Object.assign(document.createElement('canvas'), { width: W, height: H }), g = c.getContext('2d', { willReadFrequently: true });
           g.imageSmoothingQuality = 'high';
@@ -138,19 +142,23 @@ export class WorldView {
     const lin = (v) => Math.pow(v / 255, 2.2), HUES = 24, GX = 4, GY = 3;
     const found = [];
     let total = 0;
+    // A dim picture is lifted first, so its brightest parts stand at full brightness.
+    let peak = 0;
+    for (let i = 0; i < px.length; i += 4) peak = Math.max(peak, px[i], px[i + 1], px[i + 2]);
+    const gain = Math.min(4, 255 / Math.max(peak, 40));
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
+      const i = (y * W + x) * 4, r = Math.min(255, px[i] * gain), g = Math.min(255, px[i + 1] * gain), b = Math.min(255, px[i + 2] * gain);
       const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
       if (hi < 40 || (hi < 70 && sat < 0.5)) continue; // the dim haze of stars around is not the world's colour (a deep red is)
       // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys and
       // the small stars of the night around do not.
       let hue = -1, w;
-      if (sat < 0.3) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
+      if (sat < 0.22) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
         w = sat * sat * Math.sqrt(hi / 255); // how strong a colour is counts for more than how bright
         const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
         hue = Math.floor((h / 6) * HUES) % HUES;
       }
-      found.push([x, y, hue, w, lin(r), lin(g), lin(b)]);
+      found.push([x, y, hue, w, lin(r), lin(g), lin(b), w * (hue < 0 ? 1 : sat * sat)]);
       total += w;
     }
     if (total < 2) return null; // hardly a colour anywhere (a world of greys)
@@ -163,14 +171,14 @@ export class WorldView {
     };
     const [x0, x1] = span(0), [y0, y1] = span(1);
     const zones = Array.from({ length: GX * GY }, () => new Map());
-    for (const [x, y, hue, w, r, g, b] of found) {
+    for (const [x, y, hue, w, r, g, b, cw] of found) {
       const zx = Math.max(0, Math.min(GX - 1, Math.floor(((x - x0) / (x1 - x0)) * GX))), zy = Math.max(0, Math.min(GY - 1, Math.floor(((y - y0) / (y1 - y0)) * GY)));
-      const m = zones[zy * GX + zx], o = m.get(hue) || m.set(hue, { hue, w: 0, c: [0, 0, 0] }).get(hue);
-      o.w += w; o.c[0] += r * w; o.c[1] += g * w; o.c[2] += b * w;
+      const m = zones[zy * GX + zx], o = m.get(hue) || m.set(hue, { hue, w: 0, cw: 0, c: [0, 0, 0] }).get(hue);
+      o.w += w; o.cw += cw; o.c[0] += r * cw; o.c[1] += g * cw; o.c[2] += b * cw; // its colour leans to its strongest pixels
     }
     const hex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
     // A colour at full strength (how bright the plot glows is the haze's own matter).
-    const colour = (o) => { const c = o.c.map((v) => v / o.w), top = Math.max(...c, 1e-4); return hex(c.map((v) => (v / top) * 0.85)); };
+    const colour = (o) => { const c = o.c.map((v) => v / Math.max(o.cw, 1e-6)), top = Math.max(...c, 1e-4); return hex(c.map((v) => (v / top) * 0.85)); };
     const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
     const used = new Map(), spots = [];
     const order = zones.map((m, i) => ({ i, m, w: [...m.values()].reduce((a, o) => a + o.w, 0) })).filter((z) => z.w > total * 0.04).sort((a, b) => b.w - a.w);
@@ -193,10 +201,11 @@ export class WorldView {
     }
     // Colours that show well in the whole picture but led in no zone still glow, smaller.
     const all = new Map();
-    for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; o.c.forEach((v, k) => { a.c[k] += v; }); }
+    for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, cw: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; a.cw += o.cw; o.c.forEach((v, k) => { a.c[k] += v; }); }
     let n = 0;
     for (const a of [...all.values()].sort((p, q) => q.w - p.w)) {
-      if (used.has(a.hue) || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
+      // Only a colour unlike any already lit (more than 30 degrees of hue away).
+      if ([...used.keys()].some((h) => h === a.hue || (h >= 0 && a.hue >= 0 && Math.min((h - a.hue + HUES) % HUES, (a.hue - h + HUES) % HUES) <= 2)) || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
       used.set(a.hue, 1);
       spots.push({ at: [k2([-0.3, 0.3, 0][n] * room.ax), k2([0.5, 0.5, 0.3][n] * room.h), k2([0.3, -0.3, 0.35][n] * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
       n++;
