@@ -92,6 +92,81 @@ export class WorldView {
 
   autoLight() { return this.exhibit?.autoLight() || []; }
 
+  // The plot's light from afar, taken from how the world looks: the next frame, as you see
+  // it, shrunk to a small picture, and its strongest colours found in it (greys, darks and
+  // the night around count for almost nothing), each placed where it shows. Null if the
+  // world shows no colour to speak of (then the light comes from the pieces as before).
+  captureLight() {
+    const e = this.engine;
+    if (!this.exhibit || !this.group.visible || this.lighting) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      const grab = () => {
+        e.afterRender.delete(grab);
+        let px;
+        const W = 128, H = Math.max(36, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
+        try {
+          const c = Object.assign(document.createElement('canvas'), { width: W, height: H }), g = c.getContext('2d', { willReadFrequently: true });
+          g.imageSmoothingQuality = 'high';
+          g.drawImage(e.canvas, 0, 0, W, H);
+          px = g.getImageData(0, 0, W, H).data;
+        } catch { return resolve(null); }
+        resolve(this.lightFromPicture(px, W, H));
+      };
+      e.afterRender.add(grab);
+    });
+  }
+
+  lightFromPicture(px, W, H) {
+    const lin = (v) => Math.pow(v / 255, 2.2), HUES = 12, GX = 4, GY = 3;
+    const bins = new Map();
+    let total = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4, r = px[i], g = px[i + 1], b = px[i + 2];
+      const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
+      if (hi < 30) continue;
+      // Bright white (a lit page, pale stone) counts too, as one light of its own; dim greys
+      // and the small stars of the night around do not.
+      if (sat < 0.22) {
+        if (hi < 170) continue;
+        const w = 0.12 * (hi / 255), o = bins.get(-1) || bins.set(-1, { w: 0, c: [0, 0, 0], x: 0, y: 0 }).get(-1);
+        o.w += w; o.c[0] += lin(r) * w; o.c[1] += lin(g) * w; o.c[2] += lin(b) * w; o.x += x * w; o.y += y * w;
+        total += w;
+        continue;
+      }
+      const w = sat * sat * (hi / 255);
+      let h = 0;
+      if (hi !== lo) h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
+      const key = Math.floor((h / 6) * HUES) % HUES + HUES * (Math.min(GX - 1, Math.floor((x / W) * GX)) + GX * Math.min(GY - 1, Math.floor((y / H) * GY)));
+      const o = bins.get(key) || bins.set(key, { w: 0, c: [0, 0, 0], x: 0, y: 0 }).get(key);
+      o.w += w; o.c[0] += lin(r) * w; o.c[1] += lin(g) * w; o.c[2] += lin(b) * w; o.x += x * w; o.y += y * w;
+      total += w;
+    }
+    if (total < W * H * 0.004) return null;
+    // Where the colours lie in the picture, spread over the plot (across and up; in depth,
+    // the middle): what shows at the left glows at the left, what is high glows high.
+    const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
+    const kept = [...bins.values()].filter((o) => o.w >= total * 0.03);
+    const xs = kept.map((o) => o.x / o.w), ys = kept.map((o) => o.y / o.w);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const place = (x, y) => {
+      const u = x1 - x0 > W * 0.05 ? (x - x0) / (x1 - x0) : 0.5, v = y1 - y0 > H * 0.05 ? (y - y0) / (y1 - y0) : 0.5;
+      return [k2((u - 0.5) * 1.5 * room.ax), k2((0.15 + (1 - v) * 0.7) * room.h), 0];
+    };
+    const hex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
+    const spots = [], seen = new Set();
+    for (const o of [...bins.values()].sort((a, b) => b.w - a.w)) {
+      if (spots.length >= 10 || o.w < total * 0.03) break;
+      // Its colour at full strength (how bright the plot glows is the haze's own matter).
+      const c = o.c.map((v) => v / o.w), l = c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722, rich = c, top = Math.max(...rich, 1e-4);
+      const col = hex(rich.map((v) => (v / top) * 0.85));
+      const at = place(o.x / o.w, o.y / o.w);
+      if (seen.has(col)) continue;
+      seen.add(col);
+      spots.push({ at, c: col, r: Math.round(Math.min(0.75, 0.25 + Math.sqrt(o.w / total) * 0.6) * 100) / 100 });
+    }
+    return spots.length ? { spots, flow: 'drift', speed: 0.5, auto: true } : null;
+  }
+
   // A point in the plot (in plot widths) and back, through where the plot stands now.
   lightToWorld(at) {
     return this.exhibit.group.localToWorld(new THREE.Vector3(at[0], at[1], at[2]).multiplyScalar(5.2));

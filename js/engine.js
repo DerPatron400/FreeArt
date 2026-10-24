@@ -59,6 +59,7 @@ export class Engine {
     this.pointer = new THREE.Vector2(-10, -10);
     this.raycaster = new THREE.Raycaster();
     this.updaters = new Set();
+    this.afterRender = new Set(); // called once a frame is drawn, while the canvas still holds it
     this.viewOffset = [0, 0];
     this.flight = null;
     this.manual = false; // true while something else (the walker) drives the camera
@@ -192,6 +193,7 @@ export class Engine {
       if (this.flight) this.camera.lookAt(this.controls.target);
       else if (!this.manual) this.controls.update();
       this.composer.render();
+      for (const f of this.afterRender) f();
       this.adapt(dt);
       requestAnimationFrame(tick);
     };

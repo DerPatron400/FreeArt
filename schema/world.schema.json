@@ -506,7 +506,8 @@
           }
         },
         "flow": { "type": "string", "enum": ["drift", "rise", "swirl"] },
-        "speed": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 is still, 0.5 the usual pace, 1 lively." }
+        "speed": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 is still, 0.5 the usual pace, 1 lively." },
+        "auto": { "type": "boolean", "description": "True when the studio took this light from how the world looks; it is taken anew on each save. Leave it out for light painted by hand." }
       }
     },
     "build": {

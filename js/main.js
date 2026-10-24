@@ -113,6 +113,12 @@ const editor = new Editor({
 let releasing = false;
 async function release(w) {
   if (releasing) return;
+  // Unless the maker painted it, the plot's light from afar comes from how the world looks now.
+  if (!w.light || w.light.auto) {
+    const light = await worldView.captureLight().catch(() => null);
+    w = { ...w };
+    if (light) w.light = light; else delete w.light;
+  }
   if (!isOnline()) {
     saveLocal(w).then((ok) => { if (!ok) toast(t('toast.noSpace')); });
     upsert({ ...w, source: 'local' });

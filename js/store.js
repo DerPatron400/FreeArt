@@ -90,7 +90,7 @@ function lightOf(light) {
   if (!spots.length) return {};
   const flow = ['drift', 'rise', 'swirl'].includes(light.flow) ? light.flow : 'drift';
   const speed = typeof light.speed === 'number' && isFinite(light.speed) ? r2(clamp(light.speed, 0, 1)) : 0.5;
-  return { light: { spots, flow, speed } };
+  return { light: { spots, flow, speed, ...(light.auto === true ? { auto: true } : {}) } }; // auto: taken from how the world looks, renewed on each save
 }
 
 // Stars placed by hand: strokes of points in the form's own space (the form itself spans

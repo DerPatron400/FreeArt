@@ -1099,7 +1099,7 @@ export class Guide {
     paint.addEventListener('click', () => (this.lightOn ? this.stopLight() : this.startLight()));
     const state = el('p', 'g-help g-help--quiet');
     const sync = () => {
-      state.textContent = this.w.light ? tr('g.lightMine', { n: this.w.light.spots.length }) : tr('g.lightAuto');
+      state.textContent = this.w.light && !this.w.light.auto ? tr('g.lightMine', { n: this.w.light.spots.length }) : tr('g.lightAuto');
       paint.textContent = this.lightOn ? tr('ui.done') : tr('g.lightPaint');
     };
     this.syncs.set('light', [sync]);
@@ -1114,7 +1114,8 @@ export class Guide {
     this.stopPaint();
     this.stopPlace();
     // Start from the light the things give now, so only what you change is yours.
-    if (!this.w.light) {
+    if (this.w.light?.auto) { delete this.w.light.auto; this.lightSeed = JSON.stringify(this.w.light); this.changed(); }
+    else if (!this.w.light) {
       const spots = this.getAutoLight().slice(0, MAX_LIGHTS);
       if (!spots.length) {
         // Nothing placed yet: the world's three colours, where they glow by themselves.
