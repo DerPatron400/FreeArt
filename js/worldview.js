@@ -102,14 +102,28 @@ export class WorldView {
     return new Promise((resolve) => {
       const grab = () => {
         e.afterRender.delete(grab);
+        // The whole plot in view, from the side you look at it from and level with it, for
+        // this one picture (wherever the camera happens to be, close to one piece or not).
+        const cam = e.camera, was = { p: cam.position.clone(), q: cam.quaternion.clone() };
+        const r = this.room || { ax: 0.5, az: 0.5, h: 1 }, mid = this.lightToWorld([0, r.h / 2, 0]);
+        const reach = this.lightToWorld([r.ax, r.h, r.az]).distanceTo(this.lightToWorld([-r.ax, 0, -r.az])) / 2;
+        const dir = cam.getWorldDirection(new THREE.Vector3()).setY(0);
+        if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
+        cam.position.copy(mid).addScaledVector(dir.normalize(), -reach / Math.sin(THREE.MathUtils.degToRad(cam.fov) / 2) * 1.05);
+        cam.lookAt(mid);
+        cam.updateMatrixWorld();
         let px;
+        try { e.composer.render(); } catch {}
         const W = 256, H = Math.max(72, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
         try {
           const c = Object.assign(document.createElement('canvas'), { width: W, height: H }), g = c.getContext('2d', { willReadFrequently: true });
           g.imageSmoothingQuality = 'high';
           g.drawImage(e.canvas, 0, 0, W, H);
           px = g.getImageData(0, 0, W, H).data;
-        } catch { return resolve(null); }
+        } catch { px = null; }
+        cam.position.copy(was.p); cam.quaternion.copy(was.q); cam.updateMatrixWorld();
+        try { e.composer.render(); } catch {} // and the view as it was, before anyone sees the other
+        if (!px) return resolve(null);
         resolve(this.lightFromPicture(px, W, H));
       };
       e.afterRender.add(grab);
