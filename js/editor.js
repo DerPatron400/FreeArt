@@ -35,7 +35,7 @@ const BLANK = {
 };
 
 export class Editor {
-  constructor({ onChange, onRelease, onDelete, onPaint = () => {}, onPlace, onNear, getRoom }) {
+  constructor({ onChange, onRelease, onDelete, onPaint = () => {}, onPlace, onNear, getRoom, onLight, getAutoLight }) {
     this.root = document.getElementById('editor');
     this.form = document.getElementById('editor-form');
     this.list = document.getElementById('fragments-list');
@@ -59,6 +59,8 @@ export class Editor {
       onPlace,
       onNear,
       getRoom,
+      onLight,
+      getAutoLight,
       onDelete: (id) => this.onDelete(id),
       onImport: (raw) => {
         const w = normalizeWorld({ ...raw, plot: raw.plot || this.plot });
@@ -164,6 +166,7 @@ export class Editor {
     f.preset.value = '';
     f.formType.value = w.form.type;
     this.strokes = w.form.strokes;
+    this.light = w.light; // the plot's painted light (made in the studio) stays with the world
     f.energy.value = w.form.energy;
     f.density.value = w.form.density;
     const nearest = NOTES.reduce((a, b) => (Math.abs(b[1] - w.sound.root) < Math.abs(a[1] - w.sound.root) ? b : a));
@@ -492,6 +495,7 @@ export class Editor {
         media: c._media,
       })) },
       build: this.buildData,
+      light: this.light,
       plot: this.plot,
       created: new Date().toISOString().slice(0, 10),
     });

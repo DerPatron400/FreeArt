@@ -518,6 +518,11 @@ output { color: var(--paper); }
 .g-arrange { margin: 4px 0 12px; }
 .media__note {  color: var(--muted); margin: 0; }
 body.is-placing #stage { cursor: grab; }
+.light-dot { position: absolute; left: 0; top: 0; width: 26px; height: 26px; border-radius: 50%; border: 2px solid rgba(236, 228, 212, 0.75); padding: 0; pointer-events: auto; cursor: grab; touch-action: none; }
+.light-dot.is-on { border-color: var(--paper); outline: 2px solid var(--ink); outline-offset: -5px; width: 32px; height: 32px; }
+.light-dot:active { cursor: grabbing; }
+body.is-lighting #stage { cursor: crosshair; }
+.g-light input[type=color] { width: 44px; height: 44px; border: 1px solid var(--faint); border-radius: 50%; background: none; padding: 2px; cursor: pointer; }
 .g-colours input { width: 56px; height: 44px; border: 1px solid var(--faint); border-radius: 6px; background: none; padding: 2px; cursor: pointer; }
 .g-finish { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .g-rec { width: min(420px, 100%); }

@@ -70,11 +70,27 @@ export function normalizeWorld(raw) {
     sound: { root, mood },
     fragments,
     build: normalizeBuild(w.build),
+    ...lightOf(w.light),
     process: steps.length ? { title: str(w.process?.title, 60) || 'The story', steps } : null,
     plot: Number.isInteger(w.plot?.x) && Number.isInteger(w.plot?.z) ? { x: clamp(w.plot.x, -5, 5), z: clamp(w.plot.z, -5, 5) } : null,
     created: str(w.created, 10) || new Date().toISOString().slice(0, 10),
     sample: w.sample === true,
   };
+}
+
+// The plot's light from afar, painted by the maker: up to MAX_LIGHTS soft colours placed in
+// the plot (in plot widths, like placed things), how they move, and how fast.
+export const MAX_LIGHTS = 12;
+function lightOf(light) {
+  if (!Array.isArray(light?.spots)) return {};
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const spots = light.spots.slice(0, MAX_LIGHTS)
+    .filter((o) => HEX.test(o?.c) && Array.isArray(o.at) && o.at.length === 3 && o.at.every((v) => typeof v === 'number' && isFinite(v)))
+    .map((o) => ({ at: [r2(clamp(o.at[0], -3, 3)), r2(clamp(o.at[1], 0, 6)), r2(clamp(o.at[2], -3, 3))], c: o.c.toLowerCase(), r: r2(clamp(typeof o.r === 'number' && isFinite(o.r) ? o.r : 0.4, 0.05, 1.5)) }));
+  if (!spots.length) return {};
+  const flow = ['drift', 'rise', 'swirl'].includes(light.flow) ? light.flow : 'drift';
+  const speed = typeof light.speed === 'number' && isFinite(light.speed) ? r2(clamp(light.speed, 0, 1)) : 0.5;
+  return { light: { spots, flow, speed } };
 }
 
 // Stars placed by hand: strokes of points in the form's own space (the form itself spans

@@ -43,6 +43,7 @@ export class WorldView {
     this.bindPainting();
     this.bindPlacing();
     this.bindFocus();
+    this.bindLighting();
   }
 
   // ---- placing stars by hand (in the workshop) ----
@@ -70,6 +71,85 @@ export class WorldView {
     c.autoRotate = !opts && !this.preview;
     document.body.classList.toggle('is-placing', !!opts);
     if (!opts) this.clearMarker();
+  }
+
+  // ---- painting the plot's light (in the studio) ----
+
+  // The plot stands empty, glowing as it does from afar; each light is a dot you can drag
+  // (in the plane facing you, so turning the plot places it in depth), and a tap on the
+  // plot adds one where you tapped.
+  setLighting(opts) {
+    const was = !!this.lighting;
+    this.lighting = opts || null;
+    document.body.classList.toggle('is-lighting', !!opts);
+    if (!opts) { for (const d of this.dots || []) d.remove(); this.dots = []; }
+    // An empty plot still gets its light to paint (and lets it go again afterwards).
+    const empty = this.world && !this.world.build && !exhibitItems(this.world).length;
+    if (!!opts !== was && this.world && this.form && (opts ? !this.exhibit : empty)) this.layoutBuild();
+  }
+
+  autoLight() { return this.exhibit?.autoLight() || []; }
+
+  // A point in the plot (in plot widths) and back, through where the plot stands now.
+  lightToWorld(at) {
+    return this.exhibit.group.localToWorld(new THREE.Vector3(at[0], at[1], at[2]).multiplyScalar(5.2));
+  }
+
+  lightFromScreen(x, y, through) {
+    const e = this.engine, ray = new THREE.Raycaster(), n = new THREE.Vector3(), hit = new THREE.Vector3();
+    ray.setFromCamera(new THREE.Vector2((x / window.innerWidth) * 2 - 1, -(y / window.innerHeight) * 2 + 1), e.camera);
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(e.camera.getWorldDirection(n), through);
+    if (!ray.ray.intersectPlane(plane, hit)) return null;
+    const p = this.exhibit.group.worldToLocal(hit).divideScalar(5.2), r = this.room || { ax: 0.5, az: 0.5, h: 1 };
+    const round = (v) => Math.round(v * 100) / 100;
+    return [round(Math.max(-r.ax, Math.min(r.ax, p.x))), round(Math.max(0.02, Math.min(r.h, p.y))), round(Math.max(-r.az, Math.min(r.az, p.z)))];
+  }
+
+  // The dots, one per light, kept over where each light is.
+  updateDots() {
+    const L = this.lighting;
+    if (!L || !this.exhibit) return;
+    const spots = L.spots();
+    this.dots ||= [];
+    while (this.dots.length > spots.length) this.dots.pop().remove();
+    while (this.dots.length < spots.length) {
+      const d = el('button', 'light-dot');
+      d.type = 'button';
+      d.setAttribute('aria-label', L.label || '');
+      const i = () => this.dots.indexOf(d);
+      d.addEventListener('pointerdown', (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        d.setPointerCapture?.(ev.pointerId);
+        L.onSelect?.(i());
+        const from = this.lightToWorld(this.lighting.spots()[i()].at);
+        const move = (m) => { const at = this.lightFromScreen(m.clientX, m.clientY, from); if (at) this.lighting?.onMove?.(i(), at); };
+        const up = () => { d.removeEventListener('pointermove', move); d.removeEventListener('pointerup', up); d.removeEventListener('pointercancel', up); this.lighting?.onDrop?.(); };
+        d.addEventListener('pointermove', move);
+        d.addEventListener('pointerup', up);
+        d.addEventListener('pointercancel', up);
+      });
+      this.labelsRoot.append(d);
+      this.dots.push(d);
+    }
+    const scr = {}, sel = L.selected?.();
+    spots.forEach((o, i) => {
+      const d = this.dots[i];
+      this.engine.project(this.lightToWorld(o.at), scr);
+      d.style.transform = `translate(${scr.x}px, ${scr.y}px) translate(-50%, -50%)`;
+      d.style.visibility = scr.visible ? 'visible' : 'hidden';
+      d.style.background = o.c;
+      d.classList.toggle('is-on', i === sel);
+    });
+  }
+
+  bindLighting() {
+    const e = this.engine;
+    e.canvas.addEventListener('click', (ev) => {
+      if (!this.lighting || !this.exhibit || !this.group.visible || e.dragDistance >= 6) return;
+      const mid = this.room ? [0, this.room.h / 2, 0] : [0, 0.5, 0];
+      const at = this.lightFromScreen(ev.clientX, ev.clientY, this.lightToWorld(mid));
+      if (at) this.lighting.onAdd?.(at);
+    });
   }
 
   // Show how it behaves from afar (0) or with a visitor close by (1).
@@ -407,6 +487,7 @@ export class WorldView {
     this.unfocus({ instant: true });
     if (this.overPiece) { this.overPiece = false; document.body.style.cursor = ''; }
     this.setPlacing(null);
+    this.setLighting(null);
     this.nearPreview = null;
     if (this.painting) this.setPainting(false);
     this.group.visible = false;
@@ -429,7 +510,7 @@ export class WorldView {
   setWorld(world, { rebuild = false } = {}) {
     clearTimeout(this.pending);
     // While something is being placed by hand it follows at once (it only moves; nothing is rebuilt).
-    if (rebuild || !this.form || !this.preview || this.placing) return this.apply(world, { rebuild });
+    if (rebuild || !this.form || !this.preview || this.placing || this.lighting) return this.apply(world, { rebuild });
     updateFormLook(this.form, world);
     for (const f of this.fragments) f.sprite.material.color.set(world.palette[2]);
     this.pending = setTimeout(() => this.apply(world), 140);
@@ -468,6 +549,7 @@ export class WorldView {
       this.placeKey = placeKey;
       if (!this.exhibit?.relayout(world)) this.layoutBuild();
     }
+    this.exhibit?.setLight(world.light);
     for (const f of this.fragments) f.sprite.material.color.set(world.palette[2]);
     const fragKey = JSON.stringify(world.fragments.map((f) => f.title));
     if ((shapeChanged && !onlyStrokes) || fragKey !== this.fragKey) {
@@ -487,19 +569,21 @@ export class WorldView {
     this.form.position.set(0, 0, 0);
     this.form.scale.setScalar(1.55);
     this.fit = 1;
-    if (!w.build && !exhibitItems(w).length) return this.outline();
+    if (!w.build && !exhibitItems(w).length && !this.lighting) return this.outline();
     const U = 5.2, top = Math.max(buildTop(w.build), exhibitTop(w), 0.6) * U;
     let place = formPlacement(w, U, w.build ? top : U * 0.6);
     // Standing in a known plot, the form takes the same place and size as in the city,
     // so particles drawn or filled here land where everyone will see them.
     const c = this.cell;
-    if (c && !w.build?.form) {
+    let room;
+    if (c) {
       const Uc = Math.min(c.w, c.d), H = Math.max(c.h0, buildTop(w.build) * Uc + 0.15, exhibitTop(w) * Uc + 0.15);
-      place = formPlacement(w, U, H * (U / Uc));
+      if (!w.build?.form) place = formPlacement(w, U, H * (U / Uc));
+      room = { w: (c.w / Uc) * U, d: (c.d / Uc) * U, h: (H / Uc) * U }; // its light fills the plot as in the city
     }
     this.build = createBuild(w.build, w.palette, U);
     this.build.position.y = -top / 2;
-    this.exhibit = createExhibit(w, U, w.build ? buildTop(w.build) * U * 0.45 : U * 0.3);
+    this.exhibit = createExhibit(w, U, w.build ? buildTop(w.build) * U * 0.45 : U * 0.3, room);
     this.build.add(this.exhibit.group);
     this.form.position.copy(place.pos).add(this.build.position);
     this.form.scale.setScalar(place.scale);
@@ -637,12 +721,13 @@ export class WorldView {
     u.uReveal.value = Math.min(1, u.uReveal.value + dt / 4.5);
     // The form turns slowly in the gallery; in the studio it stands square with the plot,
     // so the box, the stars and everything placed share one fixed frame.
-    this.form.visible = !this.world.form.hidden || !!this.painting; // while drawing stars you see them
+    this.form.visible = (!this.world.form.hidden || !!this.painting) && !this.lighting; // while drawing stars you see them; painting light, the plot is empty
     if (this.preview) this.form.rotation.y = 0;
     else if (!this.painting && !this.world.form.strokes?.length) this.form.rotation.y += dt * 0.03; // hand-placed stars keep their place
     this.focusFrame(dt);
-    this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1, all: this.preview, inside: true }); // you have come into this world: it all shows (the studio at once, a visit piece by piece)
+    this.exhibit?.update(t, dt, this.engine.camera, { audible: document.body.classList.contains('sound-on'), presence: this.nearPreview ?? 1, all: this.preview, inside: true, lighting: !!this.lighting }); // you have come into this world: it all shows (the studio at once, a visit piece by piece)
     this.updateMarker();
+    this.updateDots();
     const e = this.engine;
     const tmp = new THREE.Vector3();
     for (let i = 0; i < this.fragments.length; i++) {

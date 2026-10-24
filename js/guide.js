@@ -7,7 +7,7 @@ import { MAX_MEDIA, SHOWABLE, MOTIONS, NEAR, sketchSvg, melodyPlayer } from './m
 import { exhibitItems } from './exhibit.js';
 import { sketchPad, melodyGrid } from './tools.js';
 import { imageToData } from './editor.js';
-import { FORMS, MAX_STROKES, BRUSHES, STROKE_REACH } from './store.js';
+import { FORMS, MAX_STROKES, BRUSHES, STROKE_REACH, MAX_LIGHTS } from './store.js';
 import { fillStrokes } from './fill.js';
 import { isOnline, space } from './server.js';
 
@@ -152,7 +152,9 @@ function recordSound() {
 }
 
 export class Guide {
-  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null }) {
+  constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [] }) {
+    this.onLight = onLight;
+    this.getAutoLight = getAutoLight;
     this.onPlace = onPlace;
     this.onNear = onNear;
     // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
@@ -229,9 +231,13 @@ export class Guide {
     this.lastText = JSON.stringify(state);
     this.w = snapshot(state);
     this.stopPlace();
+    // Painting the light, you keep painting: only the light goes back.
+    const lighting = this.lightOn;
+    if (lighting) { this.lightOn = false; this.onLight(null); }
     const y = this.root.scrollTop;
     this.onChange(this.w);
     this.render();
+    if (lighting && this.w.light) this.startLight();
     this.root.scrollTop = y;
     this.syncUndo();
   }
@@ -258,7 +264,7 @@ export class Guide {
 
   show(on) {
     this.root.hidden = !on;
-    if (!on) { this.stopPaint(); this.stopPlace(); }
+    if (!on) { this.stopPaint(); this.stopPlace(); this.stopLight(); }
   }
 
   changed() {
@@ -279,6 +285,7 @@ export class Guide {
 
   render() {
     this.stopPaint();
+    this.stopLight();
     const page = el('div', 'guide__page');
     const top = el('div', 'guide__top');
     top.append(el('p', 'guide__kicker', this.plotLabel ? tr('g.yourPlot', { plot: this.plotLabel }) : tr('g.yourWorld')));
@@ -323,7 +330,8 @@ export class Guide {
     page.append(top, chapter(1, tr('g.step1')), name, by, words,
       chapter(2, tr('g.step2'), tr('g.step2Help')), this.shelf(), this.thingsList(), this.textsList(),
       chapter(3, tr('g.step3'), tr('g.step3Help')), this.particles(),
-      chapter(4, tr('g.step4')), this.finish());
+      chapter(4, tr('g.lightStep'), tr('g.lightStepHelp')), this.lightSection(),
+      chapter(5, tr('g.step4')), this.finish());
     this.root.replaceChildren(page);
     this.syncUndo();
   }
@@ -471,6 +479,7 @@ export class Guide {
   togglePaint() {
     if (this.painting) return this.stopPaint();
     this.stopPlace();
+    this.stopLight();
     this.painting = true;
     const p = this.paintPanel;
     p.hidden = false;
@@ -549,6 +558,7 @@ export class Guide {
 
   startPlace(m) {
     this.stopPaint();
+    this.stopLight();
     this.placed(m);
     this.placing = { m, turning: false };
     this.changed();
@@ -982,6 +992,145 @@ export class Guide {
       return box;
     }));
     if (focusLast) this.textsEl.lastChild?.querySelector('textarea')?.focus();
+  }
+
+  // ---- the plot's light ----
+
+  // From afar every plot glows with soft colour. It starts from the colours of the things in
+  // it; here you can paint it yourself: tap the plot to add a colour, drag a dot to move it,
+  // and choose how it all moves.
+  lightSection() {
+    const sec = el('section', 'g-light');
+    const paint = button(tr('g.lightPaint'), 'g-btn g-btn--main');
+    paint.addEventListener('click', () => (this.lightOn ? this.stopLight() : this.startLight()));
+    const state = el('p', 'g-help g-help--quiet');
+    const sync = () => {
+      state.textContent = this.w.light ? tr('g.lightMine', { n: this.w.light.spots.length }) : tr('g.lightAuto');
+      paint.textContent = this.lightOn ? tr('ui.done') : tr('g.lightPaint');
+    };
+    this.syncs.set('light', [sync]);
+    sync();
+    this.lightPanel = el('div', 'g-paint');
+    this.lightPanel.hidden = true;
+    sec.append(paint, state, this.lightPanel);
+    return sec;
+  }
+
+  startLight() {
+    this.stopPaint();
+    this.stopPlace();
+    // Start from the light the things give now, so only what you change is yours.
+    if (!this.w.light) {
+      const spots = this.getAutoLight().slice(0, MAX_LIGHTS);
+      if (!spots.length) {
+        // Nothing placed yet: the world's three colours, where they glow by themselves.
+        const r = this.getRoom() || { ax: 0.5, az: 0.5, h: 1 }, k = (v) => Math.round(v * 100) / 100;
+        const reach = k(Math.max(r.ax * 2, r.az * 2, r.h) * 0.32);
+        [[-0.28, 0.22, 0.2], [0.3, 0.55, -0.22], [-0.05, 0.85, 0.05]].forEach(([x, y, z], i) => spots.push({ at: [k(x * r.ax * 2), k(y * r.h), k(z * r.az * 2)], c: this.w.palette[i], r: reach }));
+      }
+      this.w.light = { spots, flow: 'drift', speed: 0.5 };
+      this.lightSeed = JSON.stringify(this.w.light);
+      this.changed();
+    }
+    this.lightOn = true;
+    this.lightPick = -1;
+    this.lightBrush ||= { c: this.w.light.spots[0]?.c || this.w.palette[1], r: 0.45 };
+    this.drawLightPanel();
+    this.onLight({
+      label: tr('g.lightDot'),
+      spots: () => this.w.light?.spots || [],
+      selected: () => this.lightPick,
+      onSelect: (i) => { this.lightPick = i; const o = this.w.light.spots[i]; if (o) this.lightBrush = { c: o.c, r: o.r }; this.drawLightPanel(); },
+      onMove: (i, at) => { const o = this.w.light?.spots[i]; if (o) { o.at = at; this.changed(); } },
+      onDrop: () => {},
+      onAdd: (at) => {
+        const spots = this.w.light.spots;
+        if (spots.length >= MAX_LIGHTS) return toast(tr('g.lightMax', { n: MAX_LIGHTS }));
+        spots.push({ at, c: this.lightBrush.c, r: this.lightBrush.r });
+        this.lightPick = spots.length - 1;
+        this.changed();
+        this.drawLightPanel();
+      },
+    });
+    this.syncs.get('light')?.forEach((f) => f());
+  }
+
+  stopLight() {
+    if (!this.lightOn) return;
+    this.lightOn = false;
+    this.onLight(null);
+    // Opened and closed without a change: it stays the light the things give (and follows them).
+    if (this.w.light && JSON.stringify(this.w.light) === this.lightSeed) { delete this.w.light; this.changed(); }
+    this.lightSeed = null;
+    if (this.lightPanel?.isConnected) this.lightPanel.hidden = true;
+    this.syncs.get('light')?.forEach((f) => f());
+  }
+
+  drawLightPanel() {
+    const p = this.lightPanel, L = this.w.light;
+    if (!p || !L) return;
+    p.hidden = false;
+    const picked = L.spots[this.lightPick];
+    // Colours: those of your things and your world first, then any colour at all.
+    const tones = el('div', 'g-choice');
+    const seen = new Set();
+    const choices = [...L.spots.map((o) => o.c), ...this.getAutoLight().map((o) => o.c), ...this.w.palette].filter((c) => !seen.has(c) && seen.add(c)).slice(0, 10);
+    const setColour = (c) => {
+      this.lightBrush.c = c;
+      if (picked) { picked.c = c; this.changed(); }
+      this.drawLightPanel();
+    };
+    for (const c of choices) {
+      const b = button('', 'g-dot' + (this.lightBrush.c === c ? ' is-on' : ''));
+      b.style.background = c;
+      b.setAttribute('aria-label', c);
+      b.addEventListener('click', () => setColour(c));
+      tones.append(b);
+    }
+    const any = el('input');
+    Object.assign(any, { type: 'color', value: this.lightBrush.c });
+    any.setAttribute('aria-label', tr('g.lightAny'));
+    any.addEventListener('change', () => setColour(any.value));
+    tones.append(any);
+    // How far a colour reaches.
+    const size = el('input');
+    Object.assign(size, { type: 'range', min: 0.15, max: 1.2, step: 0.01, value: this.lightBrush.r });
+    size.addEventListener('input', () => { this.lightBrush.r = +size.value; if (picked) { picked.r = +size.value; this.changed(); } });
+    const sizeL = el('label', 'g-range');
+    sizeL.append(el('span', null, tr('g.lightSmall')), size, el('span', null, tr('g.lightWide')));
+    // How it all moves, and how fast.
+    const flows = el('div', 'g-choice');
+    for (const id of ['drift', 'rise', 'swirl']) {
+      const b = button(tr('g.flow.' + id), 'g-pill' + (L.flow === id ? ' is-on' : ''));
+      b.addEventListener('click', () => { L.flow = id; flows.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.changed(); });
+      flows.append(b);
+    }
+    const speed = el('input');
+    Object.assign(speed, { type: 'range', min: 0, max: 1, step: 0.01, value: L.speed });
+    speed.addEventListener('input', () => { L.speed = +speed.value; this.changed(); });
+    const speedL = el('label', 'g-range');
+    speedL.append(el('span', null, tr('g.still')), speed, el('span', null, tr('g.lively')));
+    const row = el('div', 'g-choice');
+    if (picked) {
+      const rm = button(tr('g.lightRemove'), 'g-btn g-btn--soft');
+      rm.addEventListener('click', () => { L.spots.splice(this.lightPick, 1); this.lightPick = -1; if (!L.spots.length) return this.lightReset(); this.changed(); this.drawLightPanel(); });
+      row.append(rm);
+    }
+    const reset = button(tr('g.lightReset'), 'g-btn g-btn--soft');
+    reset.addEventListener('click', () => this.lightReset());
+    const done = button(tr('ui.done'), 'g-btn g-btn--main');
+    done.addEventListener('click', () => this.stopLight());
+    row.append(reset, done);
+    p.replaceChildren(el('p', 'g-help', tr('g.lightHow')), el('p', 'g-help', picked ? tr('g.lightThis') : tr('g.lightNew')), tones, sizeL,
+      el('p', 'g-help', tr('g.lightMoves')), flows, speedL, row);
+  }
+
+  // Back to the light the things give by themselves.
+  lightReset() {
+    delete this.w.light;
+    this.lightSeed = null;
+    this.changed();
+    if (this.lightOn) { this.lightOn = false; this.startLight(); }
   }
 
   // ---- look and feel ----

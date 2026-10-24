@@ -32,7 +32,7 @@ export function glowTint(o) {
   const c = [0, 0, 0];
   for (let i = 0; i < BYTES; i++) c[i % 3] += linear(s.charCodeAt(i));
   const n = GRID * GRID, l = (c[0] * 0.2126 + c[1] * 0.7152 + c[2] * 0.0722) / n;
-  return c.map((v) => Math.max(0, l + (v / n - l) * 1.1));
+  return c.map((v) => Math.max(0, l + (v / n - l) * 1.4));
 }
 
 // The glow in four: the average of each quarter (top left, top right, bottom left, bottom
@@ -54,7 +54,9 @@ export function glowQuads(o) {
 // From afar a plot is filled, wall to wall, with one soft field of light made of the
 // colours of everything placed in it: every point of the box takes the colours of the
 // pieces around it, nearer ones more, so they blend across the whole plot, and the field
-// drifts slowly. Each view ray is followed through the box in a few steps and the light
+// drifts slowly; the lights themselves wander a little around where they were put, and
+// the maker can set how it all moves (drifting, rising, swirling round, or still) and how
+// fast. Each view ray is followed through the box in a few steps and the light
 // along it gathered; it is smooth from every side and cheap.
 export const HAZE_MAX = 16;
 
@@ -67,6 +69,8 @@ uniform vec3 uMin;
 uniform vec3 uMax;
 uniform vec3 uEye;
 uniform float uTime;
+uniform float uSpeed;
+uniform float uFlow;
 uniform int uCount;
 uniform vec4 uP[${16}];
 uniform vec4 uC[${16}];
@@ -88,19 +92,34 @@ void main() {
   const int STEPS = 10;
   float dt = (tf - tn) / float(STEPS);
   vec3 acc = vec3(0.0);
+  vec3 mid = (uMin + uMax) * 0.5;
+  float tt = uTime * uSpeed;
+  // Where each light is now: wandering softly around its place, or carried round the middle.
+  vec3 at[${16}];
+  float spin = uFlow > 1.5 ? tt * 0.16 : 0.0;
+  for (int i = 0; i < ${16}; i++) {
+    if (i >= uCount) break;
+    float f = float(i);
+    vec3 p = uP[i].xyz + vec3(sin(tt * 0.21 + f * 1.7), 0.6 * sin(tt * 0.17 + f * 2.3), cos(tt * 0.19 + f * 1.1)) * scale * 0.09;
+    vec2 d = p.xz - mid.xz;
+    float a = spin * (1.0 + 0.4 * sin(f * 1.3));
+    p.xz = mid.xz + vec2(d.x * cos(a) - d.y * sin(a), d.x * sin(a) + d.y * cos(a));
+    at[i] = p;
+  }
+  vec3 rise = uFlow > 0.5 && uFlow < 1.5 ? vec3(0.0, -tt * 0.12, 0.0) : vec3(0.0);
   for (int s = 0; s < STEPS; s++) {
     vec3 x = ro + rd * (tn + (float(s) + 0.5) * dt);
-    // The drift: the place a colour is looked up at wanders slowly.
+    // The drift: the place a colour is looked up at wanders slowly (rising, it flows upward).
     vec3 q = x / scale * 2.2;
-    vec3 wander = vec3(noise(q + vec3(0.0, uTime * 0.05, 0.0)), noise(q + vec3(5.2, -uTime * 0.04, 1.3)), noise(q + vec3(2.7, 0.0, uTime * 0.045))) - 0.5;
-    vec3 y = x + wander * scale * 0.35;
+    vec3 wander = vec3(noise(q + rise + vec3(0.0, tt * 0.07, 0.0)), noise(q + rise + vec3(5.2, -tt * 0.06, 1.3)), noise(q + rise + vec3(2.7, 0.0, tt * 0.065))) - 0.5;
+    vec3 y = x + wander * scale * 0.42;
     vec3 col = vec3(0.0);
     float wsum = 0.0, lit = 0.0;
     for (int i = 0; i < ${16}; i++) {
       if (i >= uCount) break;
-      vec3 d = y - uP[i].xyz;
+      vec3 d = y - at[i];
       float r = uP[i].w;
-      float k = r * r / (dot(d, d) + r * r * 0.35); // near pieces weigh more, far ones still a little
+      float k = r * r / (dot(d, d) + r * r * 0.35); // near lights weigh more, far ones still a little
       k *= k;
       col += uC[i].rgb * k;
       lit += uC[i].a * k;
@@ -108,11 +127,11 @@ void main() {
     }
     col /= max(wsum, 1e-5);
     float strength = lit / max(wsum, 1e-5);
-    // A faint, slow breathing in how much light there is, and softness toward the floor.
-    float breath = 0.75 + 0.5 * noise(q * 1.7 + vec3(uTime * 0.06));
+    // A slow breathing in how much light there is (rising, it breathes upward too).
+    float breath = 0.7 + 0.6 * noise(q * 1.7 + rise * 2.0 + vec3(tt * 0.08));
     acc += col * strength * breath * dt;
   }
-  vec3 c = 0.5 * (1.0 - exp(-acc * 0.55 / scale * 3.0)); // never a white glare, however much gathers
+  vec3 c = 0.56 * (1.0 - exp(-acc * 0.6 / scale * 3.0)); // never a white glare, however much gathers
   gl_FragColor = vec4(c, 1.0);
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
@@ -121,7 +140,7 @@ void main() {
 // The haze for a box from min to max (in the space of whatever it is added to).
 export function createHaze(min, max) {
   const uniforms = {
-    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uTime: { value: 0 }, uCount: { value: 0 },
+    uMin: { value: min.clone() }, uMax: { value: max.clone() }, uEye: { value: new THREE.Vector3() }, uTime: { value: 0 }, uSpeed: { value: 1 }, uFlow: { value: 0 }, uCount: { value: 0 },
     uP: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
     uC: { value: Array.from({ length: HAZE_MAX }, () => new THREE.Vector4()) },
   };

@@ -79,6 +79,8 @@ const editor = new Editor({
   onPlace: (opts) => worldView.setPlacing(opts),
   onNear: (v) => worldView.setNearPreview(v),
   getRoom: () => worldView.room,
+  onLight: (opts) => worldView.setLighting(opts),
+  getAutoLight: () => worldView.autoLight(),
   onRelease: (w) => release(w),
   onDelete: async (id) => {
     const w = worlds.find((x) => x.id === id);

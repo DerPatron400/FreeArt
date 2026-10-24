@@ -484,6 +484,27 @@
       "type": "string",
       "format": "date"
     },
+    "light": {
+      "type": "object",
+      "description": "Optional. The plot's light as seen from afar: soft colours placed in the plot that blend and wash through it. Without it, the light is made from the colours of the placed things and the palette.",
+      "properties": {
+        "spots": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["at", "c"],
+            "properties": {
+              "at": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Where the colour sits, in plot widths like a placed thing's show.at: x and z from the middle, y up from the ground." },
+              "c": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+              "r": { "type": "number", "minimum": 0.05, "maximum": 1.5, "description": "How far the colour reaches, in plot widths." }
+            }
+          }
+        },
+        "flow": { "type": "string", "enum": ["drift", "rise", "swirl"] },
+        "speed": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 is still, 0.5 the usual pace, 1 lively." }
+      }
+    },
     "build": {
       "type": [
         "object",

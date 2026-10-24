@@ -280,12 +280,15 @@ function videoPiece(m, size, ink) {
 // Heavy pieces take turns: one loads and is set up at a time, with a breath between,
 // so arriving at a plot never stacks several parses into one long frame.
 let turn = Promise.resolve();
-// A colour as light for the haze: never too dark to be seen, otherwise as it is (black and
-// white stays black and white; only the brightness of the darkest is lifted).
+// A colour as light for the haze: never too dark to be seen, a little richer than it is.
 function vivid([r, g, b]) {
   const l = 0.2126 * r + 0.7152 * g + 0.0722 * b, k = l < 0.22 ? 0.22 / Math.max(l, 0.01) : 1;
-  return [r, g, b].map((v) => Math.max(0, v * k));
+  return [r, g, b].map((v) => Math.max(0, l * k + (v * k - l * k) * 1.3));
 }
+// Light (linear) back to an ink colour (#rrggbb), for the studio's light to start from.
+const toHex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
+// How the light of a plot moves (the maker's choice), as the haze shader knows it.
+export const LIGHT_FLOWS = ['drift', 'rise', 'swirl'];
 // An ink colour (#rrggbb) as light for the haze, in linear light.
 const inkTint = (hex) => [1, 3, 5].map((i) => Math.pow(parseInt(hex.slice(i, i + 2), 16) / 255, 2.2));
 const STAGGER = 0.28; // seconds between one piece starting to load and the next
@@ -756,6 +759,14 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
   // From afar the plot's pieces are one haze inside its lines, each a blur of its colour.
   const haze = pieces.length || world.palette?.length ? createHaze(roomBox.min, roomBox.max) : null;
   if (haze) group.add(onLayer(haze));
+  // The light the maker painted (if any): it takes the place of the light made from the pieces.
+  let painted = null, flow = 0, pace = 1;
+  const setLight = (light) => {
+    painted = light?.spots?.length ? light.spots.map((o) => [o.at[0] * U, o.at[1] * U, o.at[2] * U, Math.max(0.05, o.r) * U, vivid(inkTint(o.c))]) : null;
+    flow = Math.max(0, LIGHT_FLOWS.indexOf(light?.flow));
+    pace = typeof light?.speed === 'number' ? light.speed * 2 : 1;
+  };
+  setLight(world.light);
   // Where each piece stands and how it moves: read again whenever the maker moves it,
   // without rebuilding (and so without reloading) anything.
   let current = items;
@@ -883,7 +894,21 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     hold(index) { for (const p of pieces) p.held = p.index === index; },
     // Far from everyone: let heavy pieces go.
     sleep() { for (const p of pieces) p.piece.lazy?.unload(); },
-    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false } = {}) {
+    setLight,
+    // The light as it is made from the pieces now (in plot units), for the studio to start painting from.
+    autoLight() {
+      const out = [], seen = new Set();
+      const add = (at, c, r) => { const hex = toHex(c); if (out.length < 12 && !seen.has(hex)) { seen.add(hex); out.push({ at: at.map((v) => Math.round(v * 100) / 100), c: hex, r: Math.round(Math.min(1, r) * 100) / 100 }); } };
+      for (const p of pieces) {
+        const q = p.holder.position, s = p.size0 * (p.scale || 1), r = Math.max(0.25, (s * 0.9) / U);
+        const quads = !p.tint && p.piece.quads, tint = p.tint || p.piece.tint;
+        if (quads) quads.forEach((c, i) => add([(q.x + (i % 2 ? 0.28 : -0.28) * s) / U, Math.max(0.05, (q.y + (i < 2 ? 0.22 : -0.22) * s) / U), q.z / U], c, r * 0.8));
+        else if (tint) add([q.x / U, q.y / U, q.z / U], tint, r);
+      }
+      palLights.forEach(([x, y, z], i) => add([x / U, y / U, z / U], inkTint(world.palette[i]), palReach / U));
+      return out;
+    },
+    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false, lighting = false } = {}) {
       const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
       // At the plot (at: chosen, or the visitor stands by it), or the eye close to it from
       // whichever side: the haze lifts and every piece shows as it is. Stepping well back
@@ -957,6 +982,8 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
           h.visible = p.show > 0.001;
         }
         h.scale.setScalar(k);
+        if (lighting) h.visible = false; // painting the light: the plot stands empty
+        else if (!p.tint) h.visible = true;
         // Facing: a set turn, slowly sway or spin around it, or (unset) face whoever looks.
         let ry;
         if (p.motion === 'spin' || ((p.piece.spin || p.piece.solid) && p.turn === null)) ry = (p.turn || 0) + c * 0.25;
@@ -990,43 +1017,56 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       // so a plot of black and white photographs glows grey and white, a plot of bright
       // paintings in their colours, each where it hangs.
       let n = 0;
-      const lit = [];
-      for (const p of pieces) {
-        const tint = p.tint || p.piece.tint, w = looking ? (tint ? 1 : 0) : (p.tint ? 1 - p.show : p.piece.haze) * (1 - spread);
-        if (tint && w >= 0.01) lit.push([p, tint, w]);
-      }
-      const own = lit.filter(([p]) => !p.tint).length; // pieces with colours of their own (pictures, films, models...)
-      const pal = own ? 0 : palLights.length;
-      const four = lit.length + own * 3 <= HAZE_MAX - pal;
-      for (const [p, tint, w] of lit) {
-        if (n >= HAZE_MAX) break;
-        // Bigger pieces reach further into the plot's colour.
-        const r = Math.max(U * 0.12, palReach * 0.6, p.size0 * (p.scale || 1) * 0.9), q = p.holder.position, quads = !p.tint && four && p.piece.quads;
-        if (quads) {
-          const s = p.size0 * (p.scale || 1);
-          quads.forEach((c, i) => {
-            const v = vivid(c);
-            u.uP.value[n].set(q.x + (i % 2 ? 0.28 : -0.28) * s, q.y + (i < 2 ? 0.22 : -0.22) * s, q.z, r * 0.75);
-            u.uC.value[n++].set(v[0], v[1], v[2], w);
-          });
-          continue;
+      // The plot's light from afar fades as you come in (and in the hall it is not there).
+      ambient += ((revealed && !lighting ? 0 : 1) - ambient) * Math.min(1, dt * (revealed ? 1.5 : 0.8));
+      if (lighting) ambient = 1;
+      if (painted) {
+        // Painted by the maker: their colours, where they put them.
+        const w = (lighting ? 1 : ambient) * (1 - spread);
+        if (w > 0.01) for (const [x, y, z, r, c] of painted) {
+          if (n >= HAZE_MAX) break;
+          u.uP.value[n].set(x, y, z, r);
+          u.uC.value[n++].set(c[0], c[1], c[2], w);
         }
-        const c = vivid(tint);
-        u.uP.value[n].set(q.x, q.y, q.z, r);
-        u.uC.value[n].set(c[0], c[1], c[2], w);
-        n++;
+      } else {
+        const lit = [];
+        for (const p of pieces) {
+          const tint = p.tint || p.piece.tint, w = lighting ? (tint ? 1 : 0) : looking ? (tint ? 1 : 0) : (p.tint ? 1 - p.show : p.piece.haze) * (1 - spread);
+          if (tint && w >= 0.01) lit.push([p, tint, w]);
+        }
+        const own = lit.filter(([p]) => !p.tint).length; // pieces with colours of their own (pictures, films, models...)
+        const pal = palLights.length;
+        const four = lit.length + own * 3 <= HAZE_MAX - pal;
+        for (const [p, tint, w] of lit) {
+          if (n >= HAZE_MAX - pal) break;
+          // Bigger pieces reach further into the plot's colour.
+          const r = Math.max(U * 0.12, palReach * 0.6, p.size0 * (p.scale || 1) * 0.9), q = p.holder.position, quads = !p.tint && four && p.piece.quads;
+          if (quads) {
+            const s = p.size0 * (p.scale || 1);
+            quads.forEach((c, i) => {
+              const v = vivid(c);
+              u.uP.value[n].set(q.x + (i % 2 ? 0.28 : -0.28) * s, q.y + (i < 2 ? 0.22 : -0.22) * s, q.z, r * 0.75);
+              u.uC.value[n++].set(v[0], v[1], v[2], w);
+            });
+            continue;
+          }
+          const c = vivid(tint);
+          u.uP.value[n].set(q.x, q.y, q.z, r);
+          u.uC.value[n].set(c[0], c[1], c[2], w);
+          n++;
+        }
+        // The world's own colours are spread through it too, so the whole box is filled.
+        if (ambient > 0.01) for (let i = 0; i < pal && n < HAZE_MAX; i++, n++) {
+          const [x, y, z, c] = palLights[i];
+          u.uP.value[n].set(x, y, z, palReach);
+          u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8 * (1 - spread));
+        }
       }
-      // A plot whose pieces are only words, drawings and melodies (all in the world's inks)
-      // also has the world's own colours spread through it, so the whole box is filled.
-      ambient += ((revealed ? 0 : 1) - ambient) * Math.min(1, dt * (revealed ? 1.5 : 0.8));
-      if (ambient > 0.01) for (let i = 0; i < pal && n < HAZE_MAX; i++, n++) {
-        const [x, y, z, c] = palLights[i];
-        u.uP.value[n].set(x, y, z, palReach);
-        u.uC.value[n].set(c[0], c[1], c[2], ambient * 0.8 * (1 - spread));
-      }
+      u.uSpeed.value = pace;
+      u.uFlow.value = flow;
       u.uCount.value = n;
       u.uTime.value = t;
-      haze.visible = n > 0 && spread < 0.99; // the hall is a black void: only the pieces
+      haze.visible = n > 0 && spread < 0.99 && (!revealed || lighting || ambient > 0.01); // the hall is a black void: only the pieces
     },
     dispose() {
       own.gone = true;
