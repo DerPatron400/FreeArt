@@ -935,6 +935,7 @@
       }
     ],
     "flow": "rise",
-    "speed": 0.4
+    "speed": 0.4,
+    "auto": true
   }
 }

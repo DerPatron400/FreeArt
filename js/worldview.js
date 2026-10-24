@@ -92,123 +92,112 @@ export class WorldView {
 
   autoLight() { return this.exhibit?.autoLight() || []; }
 
-  // The plot's light from afar, taken from how the world looks: the next frame, as you see
-  // it, shrunk to a small picture, and its strongest colours found in it (greys, darks and
-  // the night around count for almost nothing), each placed where it shows. Null if the
-  // world shows no colour to speak of (then the light comes from the pieces as before).
+  // The plot's light from afar, taken from how the world looks, like a screen's ambient
+  // light: the pieces are pictured from each of the plot's four sides, each picture cut
+  // into three zones (left, middle, right), and each zone lights its part of that side of
+  // the plot with the colour that shows most in it. Colours already lit elsewhere give way
+  // to the next one, so the colours lie side by side and run into each other instead of
+  // one taking over. Null if the world shows no colour to speak of.
   captureLight() {
     const e = this.engine;
-    if (!this.exhibit || !this.group.visible || this.lighting) return Promise.resolve(null);
+    if (!this.exhibit || !this.group.visible) return Promise.resolve(null);
     return new Promise((resolve) => {
       const grab = () => {
         e.afterRender.delete(grab);
-        // The whole plot in view, from the side you look at it from and level with it, for
-        // this one picture (wherever the camera happens to be, close to one piece or not).
         const cam = e.camera, was = { p: cam.position.clone(), q: cam.quaternion.clone() };
-        // Framed on the pieces themselves (the plot's empty room around them would leave
-        // each only a few dim pixels), or the whole plot if nothing is placed.
-        const r = this.room || { ax: 0.5, az: 0.5, h: 1 }, box = new THREE.Box3();
-        for (const o of this.exhibit.spots()) if (o.size > 0) box.union(new THREE.Box3().setFromCenterAndSize(o.at, new THREE.Vector3().setScalar(o.size)));
-        if (box.isEmpty()) { box.expandByPoint(this.lightToWorld([r.ax, r.h, r.az])); box.expandByPoint(this.lightToWorld([-r.ax, 0, -r.az])); }
-        const mid = box.getCenter(new THREE.Vector3()), reach = Math.max(0.5, box.getSize(new THREE.Vector3()).length() / 2);
-        const dir = cam.getWorldDirection(new THREE.Vector3()).setY(0);
-        if (dir.lengthSq() < 1e-4) dir.set(0, 0, -1);
-        cam.position.copy(mid).addScaledVector(dir.normalize(), -reach / Math.sin(THREE.MathUtils.degToRad(cam.fov) / 2) * 0.9);
-        cam.lookAt(mid);
-        cam.updateMatrixWorld();
-        let px;
-        try { e.composer.render(); } catch {}
-        const W = 384, H = Math.max(108, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
+        const views = [];
         try {
+          const r = this.room || { ax: 0.5, az: 0.5, h: 1 }, inv = new THREE.Matrix4().copy(this.exhibit.group.matrixWorld).invert();
+          // The pieces' own box, in plot widths (or the whole plot if nothing is placed).
+          const box = new THREE.Box3();
+          for (const o of this.exhibit.spots()) if (o.size > 0) {
+            const c = o.at.clone().applyMatrix4(inv).divideScalar(5.2), k = o.size / 5.2 / this.exhibit.group.getWorldScale(new THREE.Vector3()).x;
+            box.union(new THREE.Box3().setFromCenterAndSize(c, new THREE.Vector3().setScalar(k)));
+          }
+          if (box.isEmpty()) box.set(new THREE.Vector3(-r.ax, 0, -r.az), new THREE.Vector3(r.ax, r.h, r.az));
+          const mid = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+          const midW = this.lightToWorld(mid.toArray()), reach = this.lightToWorld([box.max.x, box.max.y, box.max.z]).distanceTo(this.lightToWorld([box.min.x, box.min.y, box.min.z])) / 2;
+          const dist = Math.max(0.5, reach) / Math.sin(THREE.MathUtils.degToRad(cam.fov) / 2) * 0.9;
+          const W = 256, H = Math.max(72, Math.round((W * e.canvas.height) / Math.max(1, e.canvas.width)));
           const c = Object.assign(document.createElement('canvas'), { width: W, height: H }), g = c.getContext('2d', { willReadFrequently: true });
           g.imageSmoothingQuality = 'high';
-          g.drawImage(e.canvas, 0, 0, W, H);
-          px = g.getImageData(0, 0, W, H).data;
-        } catch { px = null; }
-        cam.position.copy(was.p); cam.quaternion.copy(was.q); cam.updateMatrixWorld();
-        try { e.composer.render(); } catch {} // and the view as it was, before anyone sees the other
-        if (!px) return resolve(null);
-        resolve(this.lightFromPicture(px, W, H));
+          for (const side of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+            const out = this.lightToWorld([mid.x + side[0], mid.y, mid.z + side[1]]).sub(midW).setY(0).normalize();
+            cam.position.copy(midW).addScaledVector(out, dist);
+            cam.lookAt(midW);
+            cam.updateMatrixWorld();
+            e.composer.render();
+            g.drawImage(e.canvas, 0, 0, W, H);
+            views.push({ side, px: g.getImageData(0, 0, W, H).data });
+          }
+          cam.position.copy(was.p); cam.quaternion.copy(was.q); cam.updateMatrixWorld();
+          e.composer.render(); // and the view as it was, before anyone sees the others
+          resolve(this.lightFromPictures(views, W, H));
+        } catch {
+          cam.position.copy(was.p); cam.quaternion.copy(was.q); cam.updateMatrixWorld();
+          resolve(null);
+        }
       };
       e.afterRender.add(grab);
     });
   }
 
-  // Like a screen's ambient light: the picture is cut into zones (four across, three up),
-  // and each zone of the plot glows with the colour that shows most in it, so the colours
-  // lie side by side and blend into each other instead of one taking over. A colour that
-  // already leads elsewhere gives way to the next one in a zone, if that one shows enough.
-  lightFromPicture(px, W, H) {
-    const lin = (v) => Math.pow(v / 255, 2.2), HUES = 24, GX = 4, GY = 3;
-    const found = [];
+  lightFromPictures(views, W, H) {
+    const lin = (v) => Math.pow(v / 255, 2.2), HUES = 24, ZONES = 3;
+    const zones = [];
     let total = 0;
-    // A dim picture is lifted first, so its brightest parts stand at full brightness.
-    let peak = 0;
-    for (let i = 0; i < px.length; i += 4) peak = Math.max(peak, px[i], px[i + 1], px[i + 2]);
-    const gain = Math.min(4, 255 / Math.max(peak, 40));
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const i = (y * W + x) * 4, r = Math.min(255, px[i] * gain), g = Math.min(255, px[i + 1] * gain), b = Math.min(255, px[i + 2] * gain);
-      const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
-      if (hi < 40 || (hi < 70 && sat < 0.5)) continue; // the dim haze of stars around is not the world's colour (a deep red is)
-      // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys and
-      // the small stars of the night around do not.
-      let hue = -1, w;
-      if (sat < 0.22) { if (hi < 170) continue; w = 0.12 * (hi / 255); } else {
-        w = sat * sat * Math.sqrt(hi / 255); // how strong a colour is counts for more than how bright
-        const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
-        hue = Math.floor((h / 6) * HUES) % HUES;
+    for (const { side, px } of views) {
+      // A dim picture is lifted first, so its brightest parts stand at full brightness.
+      let peak = 0;
+      for (let i = 0; i < px.length; i += 4) peak = Math.max(peak, px[i], px[i + 1], px[i + 2]);
+      const gain = Math.min(4, 255 / Math.max(peak, 40));
+      const mine = Array.from({ length: ZONES }, (_, z) => ({ side, z, bins: new Map(), w: 0, y: 0 }));
+      for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = (y * W + x) * 4, r = Math.min(255, px[i] * gain), g = Math.min(255, px[i + 1] * gain), b = Math.min(255, px[i + 2] * gain);
+        const hi = Math.max(r, g, b), lo = Math.min(r, g, b), sat = hi ? (hi - lo) / hi : 0;
+        if (hi < 40 || (hi < 70 && sat < 0.5)) continue; // the dim haze of stars around is not the world's colour (a deep red is)
+        // Bright white (a lit page, pale stone) counts as a colour of its own; dim greys do not.
+        let hue = -1, w, cw;
+        if (sat < 0.22) { if (hi < 170) continue; w = cw = 0.12 * (hi / 255); } else {
+          w = sat * sat * Math.sqrt(hi / 255); // how strong a colour is counts for more than how bright
+          cw = w * sat * sat; // and its shade leans to its strongest pixels
+          const h = hi === r ? ((g - b) / (hi - lo) + 6) % 6 : hi === g ? (b - r) / (hi - lo) + 2 : (r - g) / (hi - lo) + 4;
+          hue = Math.floor((h / 6) * HUES) % HUES;
+        }
+        const zone = mine[Math.min(ZONES - 1, Math.floor((x / W) * ZONES))];
+        const o = zone.bins.get(hue) || zone.bins.set(hue, { hue, w: 0, cw: 0, c: [0, 0, 0] }).get(hue);
+        o.w += w; o.cw += cw; o.c[0] += lin(r) * cw; o.c[1] += lin(g) * cw; o.c[2] += lin(b) * cw;
+        zone.w += w; zone.y += y * w;
+        total += w;
       }
-      found.push([x, y, hue, w, lin(r), lin(g), lin(b), w * (hue < 0 ? 1 : sat * sat)]);
-      total += w;
+      zones.push(...mine);
     }
-    if (total < 2) return null; // hardly a colour anywhere (a world of greys)
-    // The part of the picture the colours fill (the few strays at its edges left out).
-    const span = (k) => {
-      const list = found.map((f) => [f[k], f[3]]).sort((a, b) => a[0] - b[0]);
-      let acc = 0, lo = list[0][0], hi = list[list.length - 1][0];
-      for (const [v, w] of list) { acc += w; if (acc < total * 0.03) lo = v; if (acc <= total * 0.97) hi = v; }
-      return [lo, Math.max(hi, lo + 1)];
-    };
-    const [x0, x1] = span(0), [y0, y1] = span(1);
-    const zones = Array.from({ length: GX * GY }, () => new Map());
-    for (const [x, y, hue, w, r, g, b, cw] of found) {
-      const zx = Math.max(0, Math.min(GX - 1, Math.floor(((x - x0) / (x1 - x0)) * GX))), zy = Math.max(0, Math.min(GY - 1, Math.floor(((y - y0) / (y1 - y0)) * GY)));
-      const m = zones[zy * GX + zx], o = m.get(hue) || m.set(hue, { hue, w: 0, cw: 0, c: [0, 0, 0] }).get(hue);
-      o.w += w; o.cw += cw; o.c[0] += r * cw; o.c[1] += g * cw; o.c[2] += b * cw; // its colour leans to its strongest pixels
-    }
+    if (total < 4) return null; // hardly a colour anywhere (a world of greys)
     const hex = (c) => '#' + c.map((v) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0')).join('');
     // A colour at full strength (how bright the plot glows is the haze's own matter).
     const colour = (o) => { const c = o.c.map((v) => v / Math.max(o.cw, 1e-6)), top = Math.max(...c, 1e-4); return hex(c.map((v) => (v / top) * 0.85)); };
-    const room = this.room || { ax: 0.5, az: 0.5, h: 1 }, k2 = (v) => Math.round(v * 100) / 100;
+    const k2 = (v) => Math.round(v * 100) / 100, room = this.room || { ax: 0.5, az: 0.5, h: 1 };
     const used = new Map(), spots = [];
-    const order = zones.map((m, i) => ({ i, m, w: [...m.values()].reduce((a, o) => a + o.w, 0) })).filter((z) => z.w > total * 0.04).sort((a, b) => b.w - a.w);
-    for (const { i, m, w } of order) {
+    for (const zone of zones.filter((z) => z.w > total * 0.01).sort((a, b) => b.w - a.w)) {
       let best = null, score = -1;
-      for (const o of m.values()) {
-        if (o.w < w * 0.06) continue;
+      for (const o of zone.bins.values()) {
+        if (o.w < zone.w * 0.06) continue;
         // Near hues count as the same (two blues are one blue); white only as itself.
         let near = 0;
         for (const [h, k] of used) near += h === o.hue ? k : h >= 0 && o.hue >= 0 && Math.min((h - o.hue + HUES) % HUES, (o.hue - h + HUES) % HUES) <= 1 ? k * 0.5 : 0;
         const sc = o.w / (1 + 3 * near);
         if (sc > score) { score = sc; best = o; }
       }
-      if (!best || best.w < total * 0.015) continue;
-      used.set(best.hue, (used.get(best.hue) || 0) + 1);
-      const zx = i % GX, zy = Math.floor(i / GX);
+      if (!best || spots.length >= 12) continue;
       const c = colour(best);
-      if (spots.some((o) => o.c === c)) continue; // the same colour twice: the one already there reaches here too
-      spots.push({ at: [k2(((zx + 0.5) / GX - 0.5) * 1.6 * room.ax), k2((0.82 - zy * 0.3) * room.h), k2((zx % 2 ? 0.25 : -0.25) * room.az)], c, r: k2(Math.max(0.25, Math.min(0.5, room.ax * 0.75))) });
-    }
-    // Colours that show well in the whole picture but led in no zone still glow, smaller.
-    const all = new Map();
-    for (const m of zones) for (const o of m.values()) { const a = all.get(o.hue) || all.set(o.hue, { hue: o.hue, w: 0, cw: 0, c: [0, 0, 0] }).get(o.hue); a.w += o.w; a.cw += o.cw; o.c.forEach((v, k) => { a.c[k] += v; }); }
-    let n = 0;
-    for (const a of [...all.values()].sort((p, q) => q.w - p.w)) {
-      // Only a colour unlike any already lit (more than 30 degrees of hue away).
-      if ([...used.keys()].some((h) => h === a.hue || (h >= 0 && a.hue >= 0 && Math.min((h - a.hue + HUES) % HUES, (a.hue - h + HUES) % HUES) <= 2)) || a.w < total * 0.025 || n >= 3 || spots.length >= 12) continue;
-      used.set(a.hue, 1);
-      spots.push({ at: [k2([-0.3, 0.3, 0][n] * room.ax), k2([0.5, 0.5, 0.3][n] * room.h), k2([0.3, -0.3, 0.35][n] * room.az)], c: colour(a), r: k2(Math.max(0.25, room.ax * 0.6)) });
-      n++;
+      if (spots.some((o) => o.c === c)) continue;
+      used.set(best.hue, (used.get(best.hue) || 0) + 1);
+      // On the side of the plot it was seen from: across that side, a little in from its face,
+      // and as high in the plot as it showed in the picture.
+      const [sx, sz] = zone.side, u = (zone.z + 0.5) / ZONES - 0.5, v = zone.y / zone.w / H;
+      const x = sx * room.ax * 0.6 + sz * u * 1.5 * room.ax, z = sz * room.az * 0.6 - sx * u * 1.5 * room.az;
+      const y = (0.15 + (1 - v) * 0.7) * room.h;
+      spots.push({ at: [k2(Math.max(-room.ax, Math.min(room.ax, x))), k2(Math.max(0.05, Math.min(room.h, y))), k2(Math.max(-room.az, Math.min(room.az, z)))], c, r: k2(Math.max(0.25, Math.min(0.5, Math.max(room.ax, room.az) * 0.7))) });
     }
     return spots.length ? { spots, flow: 'drift', speed: 0.5, auto: true } : null;
   }

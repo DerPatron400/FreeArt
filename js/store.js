@@ -82,7 +82,8 @@ export function normalizeWorld(raw) {
 // the plot (in plot widths, like placed things), how they move, and how fast.
 export const MAX_LIGHTS = 12;
 function lightOf(light) {
-  if (!Array.isArray(light?.spots)) return {};
+  // Only the light the studio takes from how the world looks (painted light is no more).
+  if (!Array.isArray(light?.spots) || light.auto !== true) return {};
   const r2 = (v) => Math.round(v * 100) / 100;
   const spots = light.spots.slice(0, MAX_LIGHTS)
     .filter((o) => HEX.test(o?.c) && Array.isArray(o.at) && o.at.length === 3 && o.at.every((v) => typeof v === 'number' && isFinite(v)))
@@ -90,7 +91,7 @@ function lightOf(light) {
   if (!spots.length) return {};
   const flow = ['drift', 'rise', 'swirl'].includes(light.flow) ? light.flow : 'drift';
   const speed = typeof light.speed === 'number' && isFinite(light.speed) ? r2(clamp(light.speed, 0, 1)) : 0.5;
-  return { light: { spots, flow, speed, ...(light.auto === true ? { auto: true } : {}) } }; // auto: taken from how the world looks, renewed on each save
+  return { light: { spots, flow, speed, auto: true } }; // taken from how the world looks, renewed on each save
 }
 
 // Stars placed by hand: strokes of points in the form's own space (the form itself spans

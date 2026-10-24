@@ -490,7 +490,7 @@
     },
     "light": {
       "type": "object",
-      "description": "Optional. The plot's light as seen from afar: soft colours placed in the plot that blend and wash through it. Without it, the light is made from the colours of the placed things and the palette.",
+      "description": "Made by the studio, not by hand: the plot's light as seen from afar, taken on each save from pictures of the world from all four sides. Soft colours placed in the plot that blend and wash through it. Without it, the light is made from the colours of the placed things and the palette.",
       "properties": {
         "spots": {
           "type": "array",

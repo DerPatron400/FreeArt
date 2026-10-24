@@ -324,6 +324,7 @@ export class Guide {
     const { wrap: words } = writeBox(this.w.statement, tr('g.statementPh'), 4, (v) => { this.w.statement = v.slice(0, 500); this.changed(); });
 
     // Four chapters in the order people think of them: who and what, the things, the particles, done.
+    // (The plot's light from afar is taken from how the world looks, each time it is saved.)
     const chapter = (n, title, help) => {
       const head = el('div', 'g-chapter');
       head.append(el('h3', 'g-chapter__title', `${n} · ${title}`));
@@ -333,8 +334,7 @@ export class Guide {
     page.append(top, chapter(1, tr('g.step1')), name, by, words,
       chapter(2, tr('g.step2'), tr('g.step2Help')), this.shelf(), this.thingsList(), this.textsList(),
       chapter(3, tr('g.step3'), tr('g.step3Help')), this.particles(),
-      chapter(4, tr('g.lightStep'), tr('g.lightStepHelp')), this.lightSection(),
-      chapter(5, tr('g.step4')), this.finish());
+      chapter(4, tr('g.step4')), this.finish());
     this.root.replaceChildren(page);
     this.syncUndo();
   }
