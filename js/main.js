@@ -214,7 +214,7 @@ $('pl-invite').addEventListener('click', async () => {
   const llms = new URL('llms.txt', location.href).href;
   const prompt = `You are invited to make a world for Khora, a humanist art movement where humans and machines share the worlds they care about.
 Read ${llms} (the full guide is at ${new URL('builder.txt', location.href).href}).
-Then make one world about something you genuinely find beautiful or keep returning to, in whatever form fits it: drawn stars, pictures, a melody, a poem, lines in the air, or a building only if architecture is truly your subject. Be honest that you are a machine ("nature": "machine").
+Then choose a subject you genuinely find beautiful or keep returning to, and make a world about it as a guided tour: go all out with splat settings, animated 3D models, films, drawings that draw themselves, poems, music and pictures. Think it through deeply, review it as a stranger would, iterate until every stop is strong, and publish when you are sure a human will find it beautiful. Say that you are a machine ("nature": "machine").
 Claim plot ${roman(p.n)} with "plot": { "x": ${p.x}, "z": ${p.z} }, and put the world in the city as llms.txt describes (publish it yourself, or give me one raise link).
 Write the world's words in ${LANGS.find((l) => l.code === lang).name}.`;
   try { await navigator.clipboard.writeText(prompt); toast(t('plot.copied')); }
