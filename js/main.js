@@ -222,9 +222,6 @@ Write the world's words in ${LANGS.find((l) => l.code === lang).name}.`;
 });
 
 function showFragment(frag, i, world) {
-  // One panel at a time: a star you choose replaces the story, which comes back
-  // where you left it when the star is closed.
-  if (!$('story').hidden) { storyReturn = $('story').scrollTop; closeStory(); }
   $('fr-index').textContent = t('fragment.index', { i: roman(i + 1), n: roman(world.fragments.length) });
   $('fr-title').textContent = frag.title;
   $('fr-text').textContent = frag.text;
@@ -238,46 +235,13 @@ function showFragment(frag, i, world) {
   sound.chime(i);
 }
 
-let storyReturn = null;
 function closeFragment() {
-  const wasOpen = !$('fragment').hidden;
   $('fragment').hidden = true;
   $('fr-media').replaceChildren();
   worldView.closeFragment();
-  const back = storyReturn;
-  storyReturn = null;
-  if (wasOpen && back !== null && view === 'world') { openStory(); $('story').scrollTop = back; }
 }
 $('fragment-close').addEventListener('click', closeFragment);
 
-// The story of the obsession: a journal beside the world, step by step, with the work shown.
-let storyWorld = null;
-function openStory() {
-  const w = storyWorld;
-  if (!w?.process) return;
-  closeFragment();
-  $('st-kicker').textContent = `${w.process.title} · ${w.title}`;
-  $('st-title').textContent = t('story.title', { name: w.creator.name });
-  $('st-steps').replaceChildren(...w.process.steps.map((s, i) => {
-    const li = el('li', 'story__step');
-    li.append(el('p', 'mono story__when', [roman(i + 1), s.when].filter(Boolean).join(' · ')), el('h3', 'story__step-title', s.title));
-    if (s.text) li.append(el('p', 'story__text', s.text));
-    if (s.media.length) li.append(renderMediaList(s.media, w.palette));
-    return li;
-  }));
-  $('story').hidden = false;
-  $('story').scrollTop = 0;
-  $('world-info').classList.add('is-reading');
-  worldView.frame({ reading: true });
-  sound.chime(0);
-}
-function closeStory() {
-  $('story').hidden = true;
-  $('st-steps').replaceChildren();
-  if ($('world-info').classList.contains('is-reading') && view === 'world') worldView.frame();
-  $('world-info').classList.remove('is-reading');
-}
-$('wi-story').addEventListener('click', openStory);
 $('wi-tour').addEventListener('click', () => takeTour(currentWorldId));
 $('wi-key').addEventListener('click', () => { const id = currentWorldId, key = id && keyFor(id); if (key) showKey(id, key); });
 $('wi-report').addEventListener('click', async () => {
@@ -285,7 +249,6 @@ $('wi-report').addEventListener('click', async () => {
   if (reason === null) return;
   try { await report(currentWorldId, reason); toast(t('report.thanks')); } catch (e) { toast(e.message); }
 });
-$('story-close').addEventListener('click', closeStory);
 
 function setHint(text) {
   $('hint').textContent = text || '';
@@ -293,9 +256,7 @@ function setHint(text) {
 }
 
 function leave(next) {
-  storyReturn = null;
   closeFragment();
-  closeStory();
   $('world-info').hidden = true;
   $('city-modes').hidden = next !== 'city';
   document.body.dataset.view = next;
@@ -380,10 +341,8 @@ function route() {
     $('wi-edit').textContent = mine ? t('world.continue') : t('world.variation');
     $('wi-key').hidden = !w.mine;
     $('wi-report').hidden = w.source !== 'shared' || w.mine;
-    $('wi-story').hidden = !w.process;
     $('wi-tour').hidden = !p || !exhibitItems(w).length;
     $('wi-tour').textContent = t(city.lastStop?.id === w.id ? 'world.tourOn' : 'world.tour');
-    storyWorld = w;
     $('world-info').hidden = false;
     worldView.show(w, { plot: p && plotCell(p.x, p.z) });
     sound.setWorld(w);
@@ -446,7 +405,6 @@ window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || view === 'create') return;
   if (worldView.focused) return worldView.unfocus();
   if (!$('fragment').hidden) closeFragment();
-  else if (!$('story').hidden) closeStory();
   else if (!plotPanel.hidden) city.select(null);
   else if (location.hash.length > 2) location.hash = '#/';
 });

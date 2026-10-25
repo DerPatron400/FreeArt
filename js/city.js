@@ -756,6 +756,7 @@ export class City {
           const w = this.walker.pos;
           const d = Math.hypot(w.x - it.anchor.position.x, w.z - it.anchor.position.z);
           presence = Math.max(presence, Math.min(1, Math.max(0, (15 - d) / 6)));
+          if (this.hall.it === it) presence = 1; // in the grown hall every piece is with you, however far its gallery reaches
           const b = this.hall.bounds(it);
           const out = Math.hypot(Math.max(0, Math.abs(w.x - b.cx) - b.w / 2), Math.max(0, Math.abs(w.z - b.cz) - b.d / 2), Math.max(0, w.y - b.h));
           inside = out === 0 || (!!it.inside && out < 1.5);
@@ -765,7 +766,7 @@ export class City {
           else if (!inside && this.hall.it === it) this.hall.close();
           if (!inside && this.hall.leaving === it && !this.hall.exit) this.hall.leaving = null;
         } else it.inside = undefined;
-        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), presence, wake: this.active, inside, peek: it === this.peek && !inside });
+        it.exhibit.update(t, dt, e.camera, { audible: this.standing === it.plot && document.body.classList.contains('sound-on'), voice: this.hall.it === it ? this.hall.voice() : null, presence, wake: this.active, inside, peek: it === this.peek && !inside });
       }
 
       if (it.label.hidden) continue;

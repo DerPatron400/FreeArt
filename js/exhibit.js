@@ -136,9 +136,15 @@ function sketchPiece(sketch, size, ink) {
   const group = new THREE.Group();
   group.add(new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat), frameLines(w * 1.04, h * 1.04, ink[1], 0.18));
   const phase = Math.random() * 10;
+  let from = 0, was = false;
   return {
     group,
-    update(t) {
+    duration: 6, // drawn in, and a moment to look
+    update(t, dt, { shown = false } = {}) {
+      // Shown on the tour, it draws itself in from the start and stays drawn.
+      if (shown && !was) from = t;
+      was = shown;
+      if (shown) { uniforms.uProgress.value = Math.min(1.05, (t - from) / 4.9); uniforms.uFade.value = 1; return; }
       const k = ((t + phase) % 14) / 14;
       uniforms.uProgress.value = Math.min(1.05, k / 0.35);
       uniforms.uFade.value = k < 0.85 ? 1 : 1 - (k - 0.85) / 0.15;
@@ -161,12 +167,17 @@ function melodyPiece(melody, size, ink) {
   const head = new THREE.Mesh(new THREE.PlaneGeometry(cw * 0.12, size * 0.5), new THREE.MeshBasicMaterial({ color: ink[1], transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
   group.add(head);
   const stepDur = 60 / melody.tempo / 2;
-  let lastStep = -1;
+  let lastStep = -1, from = 0, was = false;
   return {
     group,
-    update(t, dt, { audible } = {}) {
+    // How long it takes to hear it through once.
+    duration: melody.steps * stepDur,
+    update(t, dt, { audible, shown = false } = {}) {
+      // Shown on the tour, it begins from its first note.
+      if (shown && !was) { from = t; lastStep = -1; }
+      was = shown;
       const total = melody.steps * stepDur;
-      const pos = (t % total) / stepDur, step = Math.floor(pos);
+      const pos = ((t - from) % total) / stepDur, step = Math.floor(pos);
       head.position.x = -size / 2 + pos * cw;
       if (step !== lastStep) {
         lastStep = step;
@@ -184,9 +195,11 @@ function melodyPiece(melody, size, ink) {
   };
 }
 
-function audioPiece(size, ink) {
-  // A quiet sign of sound: rings that widen and fade, like a struck bell.
+function audioPiece(m, size, ink) {
+  // A quiet sign of sound: rings that widen and fade, like a struck bell. It sounds while
+  // it is the piece being shown (a voice beside a figure, the sound of a place).
   const group = new THREE.Group();
+  let player = null, heard = 0;
   const rings = [0, 1, 2].map(() => {
     const pts = [];
     for (let i = 0; i <= 64; i++) { const a = (i / 64) * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a), Math.sin(a), 0)); }
@@ -196,7 +209,10 @@ function audioPiece(size, ink) {
   });
   return {
     group,
-    update(t) {
+    get duration() { return isFinite(heard) ? heard : 0; },
+    update(t, dt, { audible = false } = {}) {
+      if (audible && !player && m.src) { player = new Audio(m.src); player.addEventListener('loadedmetadata', () => { heard = player?.duration || 0; }); player.play().catch(() => {}); }
+      else if (!audible && player) { player.pause(); player.removeAttribute('src'); player.load(); player = null; }
       rings.forEach((l, i) => {
         const k = ((t * 0.25 + i / 3) % 1);
         l.scale.setScalar((0.08 + k * 0.42) * size);
@@ -246,11 +262,14 @@ function videoPiece(m, size, ink) {
       return resolve({
         object: g,
         setOpacity: fades([[pic.material, 0.92], [frame.material, 0.35]]),
-        update(dt, { near = 1 } = {}) {
+        update(dt, { near = 1, audible = false } = {}) {
           if (near > 0.1 && v.preload !== 'auto') v.preload = 'auto';
           if (near > 0.2 && v.paused && !v.ended) v.play().catch(() => {});
           else if (near < 0.12 && !v.paused) v.pause();
+          // Its sound only while it is the one being shown (and sound is on).
+          if (v.muted === audible) { v.muted = !audible; if (audible) v.currentTime = 0; }
         },
+        get duration() { return isFinite(v.duration) ? v.duration : 0; },
         // A paused video still holds its decoder and buffers; letting go of the source frees them.
         free() { v.pause(); v.removeAttribute('src'); v.load(); freeObject(g); t.dispose(); },
       });
@@ -352,6 +371,7 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
     setOpacity(a) { seen = a; },
     // A splat used as a setting: where it was seen from (its sharpest view), in its own space.
     get eye() { return obj?.eye || null; },
+    get duration() { return obj?.duration || 0; },
     update(t, dt, info) {
       obj?.update?.(dt, info);
       // The real piece fades in out of the haze, and its light in the haze gives way.
@@ -616,18 +636,29 @@ function poemPiece(poem, size, ink) {
   }
   const period = poem.motion === 'still' ? Infinity : 16;
   const toCam = new THREE.Vector3(), here = new THREE.Vector3(), right = new THREE.Vector3();
-  let presence = 0;
+  let presence = 0, from = 0, was = false;
+  const LINE = 4; // seconds each line is given on the tour
   return {
     group,
     billboardChildren: true,
-    update(t, dt, { camera, presence: near = 0 } = {}) {
+    // On the tour: every line read once (a winding poem gathers whole).
+    duration: helix ? 7 : n * LINE + 1.5,
+    update(t, dt, { camera, presence: near = 0, shown = false } = {}) {
       // Arriving takes a few seconds, like a sentence being written; leaving is quicker.
       presence += (near - presence) * Math.min(1, dt * (near > presence ? 0.45 : 0.8));
+      if (shown && !was) from = t;
+      was = shown;
       const cycle = Math.floor(t / period), k = (t % period) / period;
-      const active = isFinite(period) ? cycle % n : 0;
+      let active = isFinite(period) ? cycle % n : 0;
       // 0-0.25 gather, 0.25-0.65 hold, 0.65-0.9 release, then drift.
-      const gather = poem.motion === 'still' ? 1 : poem.motion === 'drift' ? 0
+      let gather = poem.motion === 'still' ? 1 : poem.motion === 'drift' ? 0
         : k < 0.25 ? smooth(k / 0.25) : k < 0.65 ? 1 : k < 0.9 ? 1 - smooth((k - 0.65) / 0.25) : 0;
+      // Shown on the tour: from the first line, each gathering in turn, the last one staying.
+      if (shown && poem.motion !== 'presence') {
+        const s = t - from;
+        active = Math.min(n - 1, Math.floor(s / LINE));
+        gather = helix ? smooth(Math.min(1, s / 2.5)) : smooth(Math.min(1, (s - active * LINE) / 1.2));
+      }
       if (camera) {
         right.set(1, 0, 0).applyQuaternion(camera.quaternion);
         group.getWorldPosition(here);
@@ -707,7 +738,7 @@ function makePiece(m, size, palette, ink) {
     case 'image': return imagePiece(m, size, ink);
     case 'sketch': return sketchPiece(m.sketch, size, ink);
     case 'melody': return melodyPiece(m.melody, size, ink);
-    case 'audio': return audioPiece(size, ink);
+    case 'audio': return audioPiece(m, size, ink);
     case 'video': return videoPiece(m, size, ink);
     case 'model': return modelPiece(m, size);
     case 'splat': return splatPiece(m, size);
@@ -915,7 +946,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
     spots() {
       const k = group.getWorldScale(ws).x;
       return pieces.map((p) => {
-        const s = { index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid, room: p.room ?? null };
+        const s = { index: p.index, at: p.holder.getWorldPosition(new THREE.Vector3()), size: p.size0 * (p.scale || 1) * k, item: current[p.index], solid: !!p.piece.solid, room: p.room ?? null, duration: p.piece.duration || 0 };
         // A setting: the guide stands where it was seen from, looking the way it looked.
         if (p.setting) {
           s.setting = true;
@@ -960,7 +991,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
       palLights.forEach(([x, y, z, , c]) => add([x / U, y / U, z / U], inkTint(world.palette[c]), palReach / U));
       return out;
     },
-    update(t, dt, camera, { audible = false, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false, lighting = false } = {}) {
+    update(t, dt, camera, { audible = false, voice = null, presence = 0, wake = true, all = false, come = null, at = false, inside, peek = false, lighting = false } = {}) {
       const tanHalf = camera ? Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) : 1;
       // At the plot (at: chosen, or the visitor stands by it), or the eye close to it from
       // whichever side: the haze lifts and every piece shows as it is. Stepping well back
@@ -1003,7 +1034,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         // Drawn into the city (layer 1) or only into the doorway's view (the peek layer).
         const layer = looking ? PEEK_LAYER : 1;
         if (p.layer !== layer || (looking && lazy?.loaded)) { onLayer(h, layer); p.layer = layer; }
-        if (p.held) { p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; }
+        if (p.held) { p.piece.update?.(t, dt, { camera, audible: audible && (voice === null || voice === p.index), shown: voice === p.index, presence, near: 1 }); continue; }
         p.near += (presence - p.near) * Math.min(1, dt * 1.5);
         const near = ease(Math.max(0, Math.min(1, p.near)));
         // 'wake': stillness from afar, motion as you come; the others keep the shared clock.
@@ -1041,7 +1072,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
         h.scale.setScalar(k);
         if (lighting) h.visible = false; // painting the light: the plot stands empty
         else if (!p.tint) h.visible = true;
-        if (p.setting) { h.visible = !away && !lighting; h.rotation.y = p.turn || 0; p.piece.update?.(t, dt, { camera, audible, presence, near: 1 }); continue; } // a setting stays as it was seen
+        if (p.setting) { h.visible = !away && !lighting; h.rotation.y = p.turn || 0; p.piece.update?.(t, dt, { camera, audible: audible && (voice === null || voice === p.index), shown: voice === p.index, presence, near: 1 }); continue; } // a setting stays as it was seen
         // Facing: a set turn, slowly sway or spin around it, or (unset) face whoever looks.
         let ry;
         if (p.motion === 'spin' || ((p.piece.spin || p.piece.solid) && p.turn === null)) ry = (p.turn || 0) + c * 0.25;
@@ -1058,7 +1089,7 @@ export function createExhibit(world, U, mid, room = { w: U, d: U, h: Math.max(ex
           ry += d * near;
         }
         h.rotation.y = ry;
-        p.piece.update?.(t, dt, { camera, audible, presence, near: open ? Math.max(p.nearView, 0.25) : p.nearView });
+        p.piece.update?.(t, dt, { camera, audible: audible && (voice === null || voice === p.index), shown: voice === p.index, presence, near: open ? Math.max(p.nearView, 0.25) : p.nearView });
       }
       // The pieces come one after another, nearest first, each fading in on its own: never
       // a crowd of loads starting in the same frame.

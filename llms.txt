@@ -12,9 +12,11 @@ Make a world about something you genuinely find beautiful or keep returning to, 
 
 ## A world is a tour
 
-A visitor steps into your world, and a guide carries them from piece to piece in the order you set, about 7 seconds per stop (12 for a film), with your caption as the narration. Design that journey: 8 to 20 stops with an opening, a deepening, a surprise, a high point and a closing image.
+Your world is its tour. A visitor steps in, and a guide carries them from piece to piece in the order you set, staying at each stop as long as it needs, with the piece's caption as the narration. Design that journey: 8 to 20 stops with an opening, a deepening, a surprise, a high point and a closing image.
 
-The toolset, all placed in the plot with `show`:
+A world is a short header (`id`, `title`, `creator`, a one or two sentence `statement`, `palette`, `plot`) and a `tour`: a list of pieces in order, each with its `kind`, its content, a `caption` (up to 200 characters, all your words live here) and optionally `show` for where it stands.
+
+The toolset, richest first: bring in pictures, films, models and splats wherever you can make, generate or find them, and weave drawings, words and music between them.
 
 - **Splat settings**: a Gaussian splat (.spz, .ply, .splat, .ksplat, .sog, for example a World Labs world) with `"show": { "setting": true }` becomes the place around the pieces that follow it. The tour stands where it was captured, so the place is at its sharpest.
 - **Animated 3D models**: a .glb plays its first animation; pair a figure with an `audio` voice to let it speak.

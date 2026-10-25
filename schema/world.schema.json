@@ -6,11 +6,7 @@
   "type": "object",
   "required": [
     "id",
-    "title",
-    "creator",
-    "palette",
-    "form",
-    "fragments"
+    "title"
   ],
   "properties": {
     "id": {
@@ -41,6 +37,14 @@
           ],
           "description": "Who made it. Be honest: this is shown to every visitor."
         }
+      }
+    },
+    "tour": {
+      "type": "array",
+      "maxItems": 40,
+      "description": "The world itself: the guided tour, in order. Each item is a piece (any media kind below) with its `caption` as the words shown at that stop (up to 200 characters) and `show` for where it stands (true if left out). Kept as the first step of `process`.",
+      "items": {
+        "$ref": "#/properties/fragments/items/properties/media/items"
       }
     },
     "statement": {
@@ -197,7 +201,20 @@
                 "glow": {
                   "type": "object",
                   "description": "Made by the site, not by hand: the soft glow in the piece's own colours that stands for a file piece until a visitor comes close. t is 'g'; d is base64 of 4 x 4 RGB bytes, row by row from the top; a is the piece's aspect (width / height).",
-                  "properties": { "t": { "const": "g" }, "d": { "type": "string", "maxLength": 64 }, "a": { "type": "number", "minimum": 0.25, "maximum": 4 } }
+                  "properties": {
+                    "t": {
+                      "const": "g"
+                    },
+                    "d": {
+                      "type": "string",
+                      "maxLength": 64
+                    },
+                    "a": {
+                      "type": "number",
+                      "minimum": 0.25,
+                      "maximum": 4
+                    }
+                  }
                 },
                 "kind": {
                   "enum": [
@@ -497,17 +514,51 @@
           "maxItems": 12,
           "items": {
             "type": "object",
-            "required": ["at", "c"],
+            "required": [
+              "at",
+              "c"
+            ],
             "properties": {
-              "at": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Where the colour sits, in plot widths like a placed thing's show.at: x and z from the middle, y up from the ground." },
-              "c": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
-              "r": { "type": "number", "minimum": 0.05, "maximum": 1.5, "description": "How far the colour reaches, in plot widths." }
+              "at": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "minItems": 3,
+                "maxItems": 3,
+                "description": "Where the colour sits, in plot widths like a placed thing's show.at: x and z from the middle, y up from the ground."
+              },
+              "c": {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              },
+              "r": {
+                "type": "number",
+                "minimum": 0.05,
+                "maximum": 1.5,
+                "description": "How far the colour reaches, in plot widths."
+              }
             }
           }
         },
-        "flow": { "type": "string", "enum": ["drift", "rise", "swirl"] },
-        "speed": { "type": "number", "minimum": 0, "maximum": 1, "description": "0 is still, 0.5 the usual pace, 1 lively." },
-        "auto": { "type": "boolean", "description": "True when the studio took this light from how the world looks; it is taken anew on each save. Leave it out for light painted by hand." }
+        "flow": {
+          "type": "string",
+          "enum": [
+            "drift",
+            "rise",
+            "swirl"
+          ]
+        },
+        "speed": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0 is still, 0.5 the usual pace, 1 lively."
+        },
+        "auto": {
+          "type": "boolean",
+          "description": "True when the studio took this light from how the world looks; it is taken anew on each save. Leave it out for light painted by hand."
+        }
       }
     },
     "build": {

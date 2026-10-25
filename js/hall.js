@@ -133,7 +133,7 @@ export class Hall {
     this.order = [];
     this.nearLine = false;
     this.zoomK = 1;
-    this.stage = 0;
+    this.stage = 0; this.stop = null;
     this.city.refreshVolumes(it.plot);
     // The plot's card steps aside: in here the guide says what each piece is.
     this.city.standing = it.plot;
@@ -184,6 +184,7 @@ export class Hall {
     if (this.mode === 'arrive' || !this.order.length) this.order = this.plan();
     this.mode = 'free';
     this.rush = this.lead = false;
+    this.stop = null;
     this.away = false; // you stop on the line itself: it only takes you back once you have left it
     this.drawing = false;
     this.uniforms.uDraw.value = 1e6;
@@ -419,13 +420,31 @@ export class Hall {
     if (this.rush && w.pos.distanceTo(target) < Math.max(1, sz * 0.6)) { this.rush = false; this.say(spot); } // its words, right as you get there
     if (here || this.dwell > 0) {
       this.lead = false;
+      this.stop = spot.index;
       this.dwell += dt;
       this.sway += dt * 0.22;
       this.say(spot);
-      const film = spot.item?.kind === 'video';
-      if (this.dwell > (film ? f.film : f.dwell)) { this.dwell = 0; this.stage++; this.say(null); }
+      if (this.dwell > this.stay(spot)) { this.dwell = 0; this.stage++; this.stop = null; this.say(null); }
     }
     return true;
+  }
+
+  // How long the guide stays at a stop: long enough to read its words, and for the piece
+  // to play through once (a film, a sound, a melody, every line of a poem), within reason.
+  stay(spot) {
+    const f = this.feel, words = spot.item?.caption?.length || 0;
+    const read = words ? 2.5 + words / 16 : 0;
+    const own = Math.min(spot.item?.kind === 'video' ? 45 : 30, spot.duration || (spot.item?.kind === 'video' ? f.film : 0));
+    return Math.max(f.dwell, read, own);
+  }
+
+  // The piece whose sound may be heard: the one you have come to on the tour (none while
+  // it is still being flown over, or between stops), or the nearest one when flying free.
+  voice() {
+    if (!this.it || this.exit) return null;
+    if (this.mode === 'guide') return this.stop ?? -1;
+    if (this.mode === 'free') return this.order.length ? this.order[this.nearestStage()] ?? -1 : -1;
+    return -1;
   }
 
   // The arrows: on to the next stop or back to the one before (from flying free, too).
@@ -436,7 +455,7 @@ export class Hall {
     const n = this.order.length;
     if (!n) return;
     const near = this.mode === 'free' ? this.nearestStage() : this.stage;
-    this.stage = (((near + (this.mode === 'free' && d > 0 ? 0 : d)) % n) + n) % n;
+    this.stage = (((near + (this.mode === 'free' && d > 0 ? 0 : d)) % n) + n) % n; this.stop = null;
     this.dwell = 0;
     this.say(null);
     this.resume();
@@ -454,7 +473,7 @@ export class Hall {
     if (!this.order.length) this.order = this.plan();
     const stage = this.order.indexOf(hit.index);
     if (stage < 0) return;
-    this.stage = stage;
+    this.stage = stage; this.stop = null;
     this.dwell = 0;
     this.rush = true;
     this.say(null);
@@ -480,7 +499,7 @@ export class Hall {
 
   joinNearest() {
     if (this.mode !== 'free') return;
-    this.stage = this.nearestStage();
+    this.stage = this.nearestStage(); this.stop = null;
     this.dwell = 0;
     this.resume();
   }
@@ -527,7 +546,7 @@ export class Hall {
     // All spread out: the line draws itself, and the guide takes you along it.
     if (this.spreadAmt >= 1) {
       this.order = this.plan();
-      this.stage = 0; this.dwell = 0;
+      this.stage = 0; this.dwell = 0; this.stop = null;
       // Come for one piece: straight on to it.
       const s = this.target == null ? -1 : this.order.indexOf(this.target);
       if (s >= 0) { this.stage = s; this.rush = true; }

@@ -60,6 +60,13 @@ export function normalizeWorld(raw) {
     text: str(s?.text, 2000),
     media: normalizeMedia(s?.media),
   })).filter((s) => s.title !== 'Untitled' || s.text || s.media.length);
+  // A world can also be given as just its tour: a list of pieces, each with its words. It is
+  // kept as the first step's pieces (where the studio keeps them), every one on the tour.
+  if (Array.isArray(w.tour) && w.tour.length) {
+    const tour = normalizeMedia(w.tour.map((m) => (m && typeof m === 'object' && m.show == null ? { ...m, show: true } : m)));
+    if (tour.length) steps.unshift({ when: '', title: str(w.process?.title, 60) || 'The tour', text: '', media: tour });
+    steps.splice(12);
+  }
   return {
     id: slugify(w.id || title),
     title,
