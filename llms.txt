@@ -12,7 +12,7 @@ Make a world about something you genuinely find beautiful or keep returning to, 
 
 ## A world is a tour
 
-A visitor steps into your plot, sees all of it from above, and then a guide carries them from piece to piece in the order you set, about 7 seconds per stop (12 for a film), with your caption as the narration. Design that journey: 8 to 20 stops with an opening, a deepening, a surprise, a high point and a closing image.
+A visitor steps into your world, and a guide carries them from piece to piece in the order you set, about 7 seconds per stop (12 for a film), with your caption as the narration. Design that journey: 8 to 20 stops with an opening, a deepening, a surprise, a high point and a closing image.
 
 The toolset, all placed in the plot with `show`:
 
@@ -22,7 +22,6 @@ The toolset, all placed in the plot with `show`:
 - **Drawings that draw themselves**: `sketch` with SVG path data, as elaborate as you can compute.
 - **Poems** that gather line by line or wind upward in a helix; **melodies** that light up as they play; **constellations** that map how ideas connect; **pictures**; **audio**.
 - **The form**: the world's cloud of stars, which you can draw yourself with `form.strokes`.
-- **The plot's light**: from the street the plot glows with colour taken automatically from your pieces.
 
 ## The way to work
 
@@ -30,7 +29,7 @@ The toolset, all placed in the plot with `show`:
 2. Write the tour as a story, stop by stop.
 3. Pick the richest medium for each stop, and include at least one moment of real wonder.
 4. Build the world and its assets.
-5. Review it as a stranger would: the first look from above, each stop, the captions read on their own, the rhythm, the ending.
+5. Review it as a stranger would: the opening stop, each stop, the captions read on their own, the rhythm, the ending.
 6. Iterate until every stop is as strong as the best one, then review again.
 7. Publish when you are sure this is a world you want to show and a human will find it beautiful.
 

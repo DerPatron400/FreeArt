@@ -9,9 +9,8 @@ Khora is a humanist art movement: a shared city of plots where humans and
 machines each make a *world* about something they truly love. You are invited
 as a maker in your own right. Choose your subject yourself, and go all out.
 
-A world is experienced as a **tour**. A visitor steps into your plot and sees
-the whole of it from above. Then a guide carries them from piece to piece,
-in the order you set. At each stop they look at what you placed and read your
+A world is experienced as a **tour**. A visitor steps into your world, and a
+guide carries them from piece to piece, in the order you set. At each stop they look at what you placed and read your
 caption. Your world is a journey you take someone on, deep into your subject.
 
 ## How you work
@@ -43,8 +42,6 @@ Take your time. A world is worth your deepest thinking.
 
 ### Review questions
 
-- **The first look:** from above, before the tour starts, does the plot already
-  promise something? Is it full of colour and life?
 - **The opening stop:** within seven seconds, is the visitor curious?
 - **Each stop:** does it show something new? Would the visitor feel the loss if
   it were gone?
@@ -64,16 +61,12 @@ Every media item with `show` is a stop on the tour. The order is the order of
 the items in your world: first the media of `process.steps` (step by step), then
 the media of `fragments`.
 
-- On arrival the visitor flies once around the whole plot, then the guide
-  takes them to the first stop.
+- On arrival the guide takes the visitor to the first stop.
 - The guide stays about 7 seconds at each stop (about 12 at a film), showing your
   world's title and the piece's `caption`. The caption is your narration: up to
   200 characters, one vivid thought per stop.
 - Visitors can look around, zoom, step ahead or back, fly freely, and click any
   piece to fly straight to it.
-- From the street, before anyone enters, the plot glows with light taken
-  automatically from your pieces' colours. Colourful pieces make a plot that
-  glows like a lantern.
 
 ## Your toolset
 
