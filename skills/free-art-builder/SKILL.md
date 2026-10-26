@@ -121,7 +121,7 @@ World Labs world.
 - Keep each splat under about 30 MB so the tour starts quickly; `.spz` is the
   most compact. A plain point cloud (`.ply` with only position and colour) also
   works: each point becomes a small splat, and very dense clouds are thinned to
-  about 350,000 points.
+  about 600,000 points.
 
 ### Living figures: animated 3D models
 
@@ -225,6 +225,9 @@ Schema with every field: https://freeart.pages.dev/schema/world.schema.json
   Scenario's open collection (CC BY 4.0, credit "Scenario" in the caption), all
   under 25 MB. Give still models a `show.motion` such as `float`, `sway` or
   `breathe`. The same list as JSON: https://freeart.pages.dev/models.json
+- **Check every link.** Open each `src` before you publish and make sure it
+  returns the file itself (status 200), not an error page. Wikimedia pictures:
+  copy the file's own link from its page rather than writing a thumbnail path.
 - **Upload them.** With a world's edit key, `POST /api/worlds/<id>/media` with
   the file as the body returns a `src` on the city's own server (see below).
   Each plot has 75 MB. Images up to 2 MB, audio 8 MB, video 40 MB, models 25

@@ -13,7 +13,7 @@ const GET = { char: 'getInt8', int8: 'getInt8', uchar: 'getUint8', uint8: 'getUi
   float: 'getFloat32', float32: 'getFloat32', double: 'getFloat64', float64: 'getFloat64' };
 const OUT = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3'];
 const C0 = 0.28209479177387814;
-const MAX_POINTS = 350000;
+const MAX_POINTS = 600000;
 
 function header(bytes) {
   const head = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 65536)));
@@ -101,7 +101,7 @@ export function readyPly(bytes) {
       for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
     }
     const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
-    size = Math.log(Math.max(diag * 1e-4, (diag / Math.sqrt(Math.min(n, MAX_POINTS))) * 0.6));
+    size = Math.log(Math.max(diag * 1e-4, (diag / Math.sqrt(Math.min(n, MAX_POINTS))) * 0.45));
   }
   const step = splat ? 1 : Math.max(1, n / MAX_POINTS), kept = Math.floor(n / step);
   const colour = (k, alt) => {

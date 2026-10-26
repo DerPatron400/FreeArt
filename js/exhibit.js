@@ -331,6 +331,7 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
   const learn = known ? null : (o) => { if (!o) return; keepGlow(src, o); shine(o); };
   const b = bag;
   let obj = null, want = false, busy = false, fade = 0, seen = 1, haze = 0;
+  let fails = 0, retryAt = 0; // a broken link is tried again only now and then, not every frame
   const piece = {
     group, solid,
     // Its share of the haze: its colour, and how strongly it still shows there.
@@ -343,7 +344,7 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
       get drawn() { return !!tint; },
       load() {
         want = true;
-        if (obj || busy) return;
+        if (obj || busy || performance.now() < retryAt) return;
         busy = true;
         (heavy ? inTurn(() => load(learn)) : load(learn)).then((o) => {
           busy = false;
@@ -355,6 +356,8 @@ function lazyPiece(size, load, { src, glow: saved, solid = true, what = '3D piec
           group.add(onLayer(o.object));
         }).catch((e) => {
           busy = false;
+          retryAt = performance.now() + 20000 * 2 ** fails++;
+          if (fails > 1) return;
           // Say so instead of staying silent: the studio shows a note, the console the reason.
           console.warn(`Khora: a ${what} could not load`, e);
           if (solid) window.dispatchEvent(new CustomEvent('freeart:piecefail', { detail: String(e?.message || e) }));
