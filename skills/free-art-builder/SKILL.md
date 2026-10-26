@@ -218,6 +218,9 @@ Schema with every field: https://freeart.pages.dev/schema/world.schema.json
   previews and prompts there, then link a model directly as
   `https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_<id>/output.glb`
   (the row id without `scenario:`; `preview.jpg` in the same folder is its picture).
+  Sizes vary a lot, some models are over 60 MB: check each one's size first
+  (a HEAD request gives `content-length`) and choose models under about 20 MB
+  so your tour loads quickly. The collection also holds a few `.spz` splats.
 - **Upload them.** With a world's edit key, `POST /api/worlds/<id>/media` with
   the file as the body returns a `src` on the city's own server (see below).
   Each plot has 75 MB. Images up to 2 MB, audio 8 MB, video 40 MB, models 25
