@@ -540,6 +540,17 @@ function coreBox(mesh) {
   return box.expandByVector(box.getSize(new THREE.Vector3()).multiplyScalar(0.12));
 }
 
+// PLY files are made ready in a worker; where workers are missing, on the page itself.
+function plyBytes(bytes) {
+  let worker;
+  try { worker = new Worker(new URL('./ply-worker.js', import.meta.url), { type: 'module' }); } catch { return readyPly(bytes); }
+  return new Promise((ok, fail) => {
+    worker.onmessage = (e) => { worker.terminate(); e.data.error ? fail(new Error(e.data.error)) : ok(new Uint8Array(e.data.out)); };
+    worker.onerror = (e) => { worker.terminate(); fail(new Error(e.message || 'PLY worker failed')); };
+    worker.postMessage(bytes.buffer, [bytes.buffer]);
+  });
+}
+
 function splatPiece(m, size) {
   const src = m.src, show = m.show;
   if (!host) return null;
@@ -547,7 +558,7 @@ function splatPiece(m, size) {
     const S = await sparkLib();
     const fileType = splatType(src);
     // PLY comes in many flavours; Spark reads binary splats only, so the rest is turned into one.
-    const mesh = new S.SplatMesh(fileType === 'ply' ? { fileBytes: readyPly(await bytesOf(src)), fileType }
+    const mesh = new S.SplatMesh(fileType === 'ply' ? { fileBytes: await plyBytes(await bytesOf(src)), fileType }
       : src.startsWith('data:') ? { fileBytes: await bytesOf(src), fileType } : { url: src, fileType });
     await mesh.initialized;
     // Most splat files (World Labs included) are stored upside down for three.js.

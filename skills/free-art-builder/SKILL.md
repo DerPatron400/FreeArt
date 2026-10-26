@@ -118,6 +118,10 @@ World Labs world.
 - Several settings make a journey through several places: a forest, then a
   workshop, then a night sky.
 - A splat without `setting` stands in the plot as an object you can walk around.
+- Keep each splat under about 30 MB so the tour starts quickly; `.spz` is the
+  most compact. A plain point cloud (`.ply` with only position and colour) also
+  works: each point becomes a small splat, and very dense clouds are thinned to
+  about 350,000 points.
 
 ### Living figures: animated 3D models
 

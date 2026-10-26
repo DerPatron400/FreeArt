@@ -2,6 +2,9 @@
 // write text ("ascii") PLY, or plain point clouds with only position and colour.
 // readyPly turns any of those into a binary splat PLY: each point becomes a small
 // round splat of its own colour. A file that is already a binary splat is left as it is.
+// A very dense point cloud keeps an even share of its points (MAX_POINTS), each a
+// little larger, so a scan of millions stays light enough to fly through.
+// The work runs in a worker (ply-worker.js), so the page never stops while it happens.
 
 const SIZES = { char: 1, int8: 1, uchar: 1, uint8: 1, short: 2, int16: 2, ushort: 2, uint16: 2,
   int: 4, int32: 4, uint: 4, uint32: 4, float: 4, float32: 4, double: 8, float64: 8 };
@@ -10,6 +13,7 @@ const GET = { char: 'getInt8', int8: 'getInt8', uchar: 'getUint8', uint8: 'getUi
   float: 'getFloat32', float32: 'getFloat32', double: 'getFloat64', float64: 'getFloat64' };
 const OUT = ['x', 'y', 'z', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3'];
 const C0 = 0.28209479177387814;
+const MAX_POINTS = 350000;
 
 function header(bytes) {
   const head = new TextDecoder().decode(bytes.subarray(0, Math.min(bytes.length, 65536)));
@@ -97,8 +101,9 @@ export function readyPly(bytes) {
       for (let a = 0; a < 3; a++) { lo[a] = Math.min(lo[a], p[a]); hi[a] = Math.max(hi[a], p[a]); }
     }
     const diag = Math.hypot(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]) || 1;
-    size = Math.log(Math.max(diag * 1e-4, (diag / Math.sqrt(n)) * 0.6));
+    size = Math.log(Math.max(diag * 1e-4, (diag / Math.sqrt(Math.min(n, MAX_POINTS))) * 0.6));
   }
+  const step = splat ? 1 : Math.max(1, n / MAX_POINTS), kept = Math.floor(n / step);
   const colour = (k, alt) => {
     if (cols[k]) return (i) => cols[k][i];
     const c = cols[alt] || cols[alt.replace('red', 'r').replace('green', 'g').replace('blue', 'b')];
@@ -115,12 +120,13 @@ export function readyPly(bytes) {
   const sc = [get('scale_0', size), get('scale_1', size), get('scale_2', size)];
   const rot = [get('rot_0', 1), get('rot_1', 0), get('rot_2', 0), get('rot_3', 0)];
 
-  const head = new TextEncoder().encode(`ply\nformat binary_little_endian 1.0\nelement vertex ${n}\n${OUT.map((k) => `property float ${k}`).join('\n')}\nend_header\n`);
-  const out = new Uint8Array(head.length + n * OUT.length * 4);
+  const head = new TextEncoder().encode(`ply\nformat binary_little_endian 1.0\nelement vertex ${kept}\n${OUT.map((k) => `property float ${k}`).join('\n')}\nend_header\n`);
+  const out = new Uint8Array(head.length + kept * OUT.length * 4);
   out.set(head);
   const dv = new DataView(out.buffer);
   let off = head.length;
-  for (let i = 0; i < n; i++) {
+  for (let j = 0; j < kept; j++) {
+    const i = Math.floor(j * step);
     const row = [x[i], y[i], z[i], dc[0](i), dc[1](i), dc[2](i), opacity(i), sc[0](i), sc[1](i), sc[2](i), rot[0](i), rot[1](i), rot[2](i), rot[3](i)];
     for (const val of row) { dv.setFloat32(off, val, true); off += 4; }
   }
