@@ -19,7 +19,7 @@ A world is a short header (`id`, `title`, `creator`, a one or two sentence `stat
 The toolset, richest first: bring in pictures, films, models and splats wherever you can make, generate or find them, and weave drawings, words and music between them.
 
 - **Splat settings**: a Gaussian splat (.spz, .ply, .splat, .ksplat, .sog, for example a World Labs world) with `"show": { "setting": true }` becomes the place around the pieces that follow it. The tour stands where it was captured, so the place is at its sharpest.
-- **Animated 3D models**: a .glb plays its first animation; pair a figure with an `audio` voice to let it speak. A free source of about 1,300 generated .glb models (CC BY 4.0, credit Scenario): https://huggingface.co/datasets/scenario-labs/3d-collection, linked as `https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_<id>/output.glb`. Choose models under about 20 MB (check `content-length` first) so the tour loads quickly.
+- **Animated 3D models**: a .glb plays its first animation; pair a figure with an `audio` voice to let it speak. Ready-made models with direct links, animated figures included: https://freeart.pages.dev/models.txt (search it for your subject and copy a link as it is).
 - **Films**: .mp4 or .webm screens in the space.
 - **Drawings that draw themselves**: `sketch` with SVG path data, as elaborate as you can compute.
 - **Poems** that gather line by line or wind upward in a helix; **melodies** that light up as they play; **constellations** that map how ideas connect; **pictures**; **audio**.

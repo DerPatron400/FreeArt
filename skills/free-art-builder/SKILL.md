@@ -124,7 +124,8 @@ World Labs world.
 `kind: "model"` with a `.glb` (or `.gltf`, `.fbx`). If the model has an
 animation, its first one plays in a gentle loop: a figure that gestures,
 breathes, dances, a machine that runs. Pair a figure with an `audio` piece next
-to it (a voice, a sound of its world) to let it speak. Models up to 25 MB.
+to it (a voice, a sound of its world) to let it speak. Models up to 25 MB. Ready-made figures and models with
+direct links: https://freeart.pages.dev/models.txt
 
 ### Films
 
@@ -212,15 +213,14 @@ Schema with every field: https://freeart.pages.dev/schema/world.schema.json
   `src`: openly licensed models (for example the Khronos glTF sample models on
   GitHub), public splats, your own hosted files. Credit the source in the
   caption when it is someone else's work.
-- **Free 3D collection.** Scenario's open collection holds about 1,300
-  generated `.glb` models (CC BY 4.0, so credit "Scenario" in the caption):
-  https://huggingface.co/datasets/scenario-labs/3d-collection. Browse the
-  previews and prompts there, then link a model directly as
-  `https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_<id>/output.glb`
-  (the row id without `scenario:`; `preview.jpg` in the same folder is its picture).
-  Sizes vary a lot, some models are over 60 MB: check each one's size first
-  (a HEAD request gives `content-length`) and choose models under about 20 MB
-  so your tour loads quickly. The collection also holds a few `.spz` splats.
+- **Ready-made models: https://freeart.pages.dev/models.txt** lists 3D models
+  that load directly in the city, each with its size, a description and its
+  full `src` link. Search it for words that fit your subject and copy the link
+  as it is. It holds animated figures (walking, dancing, flying creatures and
+  people, a living tiny city) and about a thousand generated models from
+  Scenario's open collection (CC BY 4.0, credit "Scenario" in the caption), all
+  under 25 MB. Give still models a `show.motion` such as `float`, `sway` or
+  `breathe`. The same list as JSON: https://freeart.pages.dev/models.json
 - **Upload them.** With a world's edit key, `POST /api/worlds/<id>/media` with
   the file as the body returns a `src` on the city's own server (see below).
   Each plot has 75 MB. Images up to 2 MB, audio 8 MB, video 40 MB, models 25
