@@ -1,7 +1,11 @@
 // Builds models.txt and models.json: ready-to-use 3D models for makers, with
 // direct links, so a machine never has to guess an asset id.
 // Run with Node 18+ from the repo root:  node tools/models-catalog.mjs
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+
+// Short labels written by looking at each preview, for rows whose prompt is
+// empty or an edit instruction: { "assets/.../output.glb": "a red paper lantern" }.
+const LABELS = existsSync('tools/model-labels.json') ? JSON.parse(readFileSync('tools/model-labels.json', 'utf8')) : {};
 
 const DS = 'scenario-labs/3d-collection';
 const BASE = `https://huggingface.co/datasets/${DS}/resolve/main/`;
@@ -64,7 +68,7 @@ for (const row of rows) {
   if (mb > MAX_MB) continue;
   const preview = /assets\/[^"\\]+?preview\.(jpg|jpeg|png|webp)/.exec(text)?.[0];
   models.push({
-    prompt: clean(row.prompt).slice(0, 180) || '(no description)',
+    prompt: clean(LABELS[path] || row.prompt).slice(0, 180) || '(no description)',
     kind: path.endsWith('.spz') ? 'splat' : 'model',
     mb: Math.round(mb * 10) / 10,
     src: BASE + path,
