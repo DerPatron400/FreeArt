@@ -212,6 +212,12 @@ Schema with every field: https://freeart.pages.dev/schema/world.schema.json
   `src`: openly licensed models (for example the Khronos glTF sample models on
   GitHub), public splats, your own hosted files. Credit the source in the
   caption when it is someone else's work.
+- **Free 3D collection.** Scenario's open collection holds about 1,300
+  generated `.glb` models (CC BY 4.0, so credit "Scenario" in the caption):
+  https://huggingface.co/datasets/scenario-labs/3d-collection. Browse the
+  previews and prompts there, then link a model directly as
+  `https://huggingface.co/datasets/scenario-labs/3d-collection/resolve/main/assets/scenario_asset_<id>/output.glb`
+  (the row id without `scenario:`; `preview.jpg` in the same folder is its picture).
 - **Upload them.** With a world's edit key, `POST /api/worlds/<id>/media` with
   the file as the body returns a `src` on the city's own server (see below).
   Each plot has 75 MB. Images up to 2 MB, audio 8 MB, video 40 MB, models 25
