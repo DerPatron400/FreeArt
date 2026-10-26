@@ -5,6 +5,7 @@
 // Units: U = plot width in world units (see build.js). Everything is on layer 1.
 import * as THREE from 'three';
 import { createBuild } from './build.js';
+import { readyPly } from './ply.js';
 import { SHOWABLE, inkColors, embedFor, constellationLayout, melodyFreq, ctx, pluck } from './media.js';
 import { glowTint, glowQuads, createHaze, HAZE_MAX, knownGlow, keepGlow, glowImage, glowColour, glowModel, glowSplat } from './glow.js';
 
@@ -545,7 +546,9 @@ function splatPiece(m, size) {
   return lazyPiece(size, async (learn) => {
     const S = await sparkLib();
     const fileType = splatType(src);
-    const mesh = new S.SplatMesh(src.startsWith('data:') ? { fileBytes: await bytesOf(src), fileType } : { url: src, fileType });
+    // PLY comes in many flavours; Spark reads binary splats only, so the rest is turned into one.
+    const mesh = new S.SplatMesh(fileType === 'ply' ? { fileBytes: readyPly(await bytesOf(src)), fileType }
+      : src.startsWith('data:') ? { fileBytes: await bytesOf(src), fileType } : { url: src, fileType });
     await mesh.initialized;
     // Most splat files (World Labs included) are stored upside down for three.js.
     if (!show?.flip) mesh.quaternion.set(1, 0, 0, 0);
