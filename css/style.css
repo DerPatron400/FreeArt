@@ -715,7 +715,7 @@ body.in-studio .chrome, body.in-studio .hint, body.in-studio .world-info { displ
 .st-swatches--pop { padding: 2px 3px; gap: 12px; }
 .st-picker { display: flex; flex-direction: column; gap: 12px; }
 .st-picker__sq { position: relative; height: 180px; border-radius: 4px; cursor: crosshair; touch-action: none;
-  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, hsl(var(--h, 0) 100% 50%)); }
+  background: linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, var(--hue, #f00)); }
 .st-picker__knob { position: absolute; width: 12px; height: 12px; margin: -7px 0 0 -7px; border: 1px solid #fff; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35); pointer-events: none; }
 .st-picker__hue { -webkit-appearance: none; appearance: none; width: 100%; height: 10px; margin: 0; border-radius: 5px; cursor: pointer;
   background: linear-gradient(90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
