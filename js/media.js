@@ -137,6 +137,8 @@ export function normalizeMedia(list) {
   return (Array.isArray(list) ? list : []).slice(0, MAX_MEDIA).map((m) => {
     if (!m || !KINDS.some((k) => k.id === m.kind)) return null;
     const out = { kind: m.kind };
+    const title = str(m.title, 80);
+    if (title) out.title = title;
     const caption = str(m.caption, 200);
     if (caption) out.caption = caption;
     if (['image', 'video', 'audio', 'model', 'splat'].includes(m.kind)) {

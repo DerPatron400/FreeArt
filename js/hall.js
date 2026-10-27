@@ -356,7 +356,7 @@ export class Hall {
     if (this.captionFor !== spot.index) {
       this.captionFor = spot.index;
       const world = this.it.world;
-      this.caption.replaceChildren(el('span', 'mono', world.title), ...(spot.item?.caption ? [el('b', null, spot.item.caption)] : []));
+      this.caption.replaceChildren(el('span', 'mono', spot.item?.title ? world.title + ' · ' + spot.item.title : world.title), ...(spot.item?.caption ? [el('b', null, spot.item.caption)] : []));
       this.caption.hidden = false;
       requestAnimationFrame(() => this.caption.classList.add('is-on'));
     }

@@ -585,7 +585,7 @@ export class WorldView {
     const w = window.innerWidth, h = window.innerHeight;
     if (w <= 760) e.setViewOffset(0, preview ? h * 0.29 : h * 0.16);
     else if (reading) e.setViewOffset(-Math.min(600, w) / 2, 0);
-    else e.setViewOffset(preview ? Math.min(460, w) / 2 : w > 1100 ? 140 : 0, 0);
+    else e.setViewOffset(preview ? 0 : w > 1100 ? 140 : 0, 0); // the studio's panels sit on both sides
   }
 
   show(world, { preview = false, plot = null } = {}) {

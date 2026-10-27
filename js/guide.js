@@ -1,5 +1,6 @@
-// The studio: the gentle way in. Everything can, nothing must. A shelf of tools,
-// large and plain, and whatever you make appears beside you as you make it.
+// The studio, as the design has it: the world fills the screen; on the left the
+// world's story, its background and the shelf of things to add; on the right the
+// settings of the piece in hand; along the bottom the timeline, which is the tour.
 // It edits the same world as the full workshop, so anyone can switch at any moment.
 import { el, toast } from './util.js';
 import { t as tr } from './i18n.js';
@@ -7,9 +8,10 @@ import { MAX_MEDIA, SHOWABLE, MOTIONS, NEAR, sketchSvg, melodyPlayer } from './m
 import { exhibitItems } from './exhibit.js';
 import { sketchPad, melodyGrid } from './tools.js';
 import { imageToData } from './editor.js';
-import { FORMS, MAX_STROKES, BRUSHES, STROKE_REACH, MAX_LIGHTS } from './store.js';
+import { FORMS, MAX_STROKES, BRUSHES, STROKE_REACH, MAX_LIGHTS, saveDraft, exportable, normalizeWorld } from './store.js';
 import { fillStrokes } from './fill.js';
 import { isOnline, space } from './server.js';
+import { ICONS, KIND_ICON, ring } from './icons.js';
 
 // Each feeling sets colours, form, movement and sound together.
 export const FEELINGS = [
@@ -23,7 +25,9 @@ export const FEELINGS = [
 
 const SHOW_FIRST = 16; // the first things added stand in the plot (and on the tour) on their own
 const AUDIO_MAX = 8e6, VIDEO_MAX = 40e6, MODEL_MAX = 25e6, SPLAT_MAX = 30e6; // bytes, for files from the device (the server's limits)
-const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+// The shelf, in the design's order: what each tile adds, and its icon.
+const SHELF = [['text', 'text'], ['draw', 'draw'], ['picture', 'picture'], ['video', 'video'], ['3d', 'd3'], ['sound', 'sound']];
 
 // A copy of a world for the history: objects and lists are new, the text inside (pictures
 // and sounds are long text) is shared, so keeping many steps back costs little.
@@ -37,6 +41,14 @@ const HISTORY = 60;
 function button(text, cls = 'g-btn') {
   const b = el('button', cls, text);
   b.type = 'button';
+  return b;
+}
+
+function iconButton(icon, label, cls = 'st-icon') {
+  const b = button('', cls);
+  b.innerHTML = ICONS[icon];
+  b.setAttribute('aria-label', label);
+  b.title = label;
   return b;
 }
 
@@ -73,6 +85,31 @@ async function fbxToGlb(file) {
   return new File([glb], file.name.replace(/\.fbx$/i, '.glb'), { type: 'model/gltf-binary' });
 }
 
+// A 3D file from the device as a piece: models as .glb, splats packed into .spz (often ten
+// times smaller). Resolves to { kind, src } or null (and says why).
+async function objectFile(f) {
+  const ext = (f.name.match(/\.(\w+)$/) || [])[1]?.toLowerCase();
+  if (ext === 'glb' || ext === 'gltf' || ext === 'fbx') {
+    if (ext === 'fbx') {
+      toast(tr('g.packing', { name: f.name }), 8000);
+      try { f = await fbxToGlb(f); } catch { toast(tr('g.badObject', { name: f.name })); return null; }
+    }
+    if (f.size > MODEL_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: MODEL_MAX / 1e6 })); return null; }
+    return { kind: 'model', src: await fileAs(f, 'model/gltf-binary') };
+  }
+  let file = f;
+  if (ext !== 'spz' && ext !== 'sog') {
+    toast(tr('g.packing', { name: f.name }), 8000);
+    try {
+      const { transcodeSpz } = await import('@sparkjsdev/spark');
+      const { fileBytes } = await transcodeSpz({ inputs: [{ fileBytes: new Uint8Array(await f.arrayBuffer()), pathOrUrl: f.name }] });
+      file = new File([fileBytes], f.name.replace(/\.\w+$/, '.spz'));
+    } catch { toast(tr('g.badObject', { name: f.name })); return null; }
+  }
+  if (file.size > SPLAT_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: SPLAT_MAX / 1e6 })); return null; }
+  return { kind: 'splat', src: await fileAs(file, 'application/x-' + (file.name.endsWith('.sog') ? 'sog' : 'spz')) };
+}
+
 // A link to a world on dndai.app becomes the link to its splat (the 500k version:
 // detailed, and light enough for the city).
 function objectLink(src) {
@@ -87,38 +124,6 @@ function pickFiles(accept, multiple = false) {
     input.addEventListener('change', () => resolve([...input.files]));
     input.click();
   });
-}
-
-// A text box with an optional "speak" button underneath.
-function writeBox(value, placeholder, rows, onInput, cls = 'g-text') {
-  const wrap = el('div', 'g-write');
-  const ta = el('textarea', cls);
-  Object.assign(ta, { value: value || '', placeholder, rows });
-  ta.addEventListener('input', () => onInput(ta.value));
-  wrap.append(ta);
-  if (SpeechRec) {
-    const mic = button(tr('g.speak'), 'g-btn g-btn--soft g-mic');
-    let rec = null;
-    mic.addEventListener('click', () => {
-      if (rec) { rec.stop(); return; }
-      rec = new SpeechRec();
-      rec.lang = navigator.language || 'en';
-      rec.continuous = true;
-      rec.onresult = (e) => {
-        const said = [...e.results].slice(e.resultIndex).filter((r) => r.isFinal).map((r) => r[0].transcript).join(' ').trim();
-        if (!said) return;
-        ta.value = (ta.value.trim() ? ta.value.trim() + ' ' : '') + said[0].toUpperCase() + said.slice(1);
-        onInput(ta.value);
-      };
-      rec.onend = () => { rec = null; mic.textContent = tr('g.speak'); mic.classList.remove('is-on'); };
-      rec.onerror = () => toast(tr('g.noHear'));
-      rec.start();
-      mic.textContent = tr('g.listening');
-      mic.classList.add('is-on');
-    });
-    wrap.append(mic);
-  }
-  return { wrap, ta };
 }
 
 // Record a voice or a sound with the microphone. Resolves to a data URL, or null.
@@ -151,6 +156,148 @@ function recordSound() {
   });
 }
 
+// ---- small parts of the panels, as the design draws them ----
+
+// A card: a title, a quiet line under it, then its content.
+function card(title, help, cls = '') {
+  const c = el('section', 'st-card' + (cls ? ' ' + cls : ''));
+  const head = el('div', 'st-card__head');
+  head.append(el('h3', 'st-card__title', title));
+  if (help) head.append(el('p', 'st-card__help', help));
+  c.append(head);
+  return c;
+}
+
+// A labelled field: the small mono label above, the control below.
+function field(label, control) {
+  const f = el('label', 'st-field');
+  f.append(el('span', 'st-label', label), control);
+  return f;
+}
+
+function input(value, placeholder, onInput, max = 200) {
+  const x = el('input', 'st-input');
+  Object.assign(x, { value: value || '', placeholder, maxLength: max });
+  x.addEventListener('input', () => onInput(x.value));
+  return x;
+}
+
+function textarea(value, placeholder, onInput, max = 500, rows = 4) {
+  const x = el('textarea', 'st-input st-input--area');
+  Object.assign(x, { value: value || '', placeholder, maxLength: max, rows });
+  x.addEventListener('input', () => onInput(x.value));
+  return x;
+}
+
+// A slider drawn as a thin line with a dot, in the design's manner.
+function slider(label, min, max, step, value, onInput, onChange = onInput) {
+  const f = el('label', 'st-field');
+  const r = el('input', 'st-range');
+  Object.assign(r, { type: 'range', min, max, step, value });
+  const fillIt = () => r.style.setProperty('--k', ((+r.value - min) / (max - min)) * 100 + '%');
+  fillIt();
+  r.addEventListener('input', () => { fillIt(); onInput(+r.value); });
+  r.addEventListener('change', () => onChange(+r.value));
+  f.append(el('span', 'st-label', label), r);
+  f.set = (v) => { if (document.activeElement !== r) { r.value = v; fillIt(); } };
+  return f;
+}
+
+// Chips: one of several, the chosen one light.
+function chips(items, current, onPick, cls = 'st-chips') {
+  const row = el('div', cls);
+  for (const [id, label] of items) {
+    const b = button(label, 'st-chip' + (current === id ? ' is-on' : ''));
+    b.dataset.id = id;
+    b.addEventListener('click', () => { onPick(id); row.querySelectorAll('.st-chip').forEach((x) => x.classList.toggle('is-on', x === b)); });
+    row.append(b);
+  }
+  row.set = (id) => row.querySelectorAll('.st-chip').forEach((x) => x.classList.toggle('is-on', x.dataset.id === id));
+  return row;
+}
+
+// A place to drop a file, or to tap to choose one.
+function dropzone(accept, formats, onFiles, multiple = false) {
+  const z = button('', 'st-drop');
+  const line = el('span', 'st-drop__line');
+  line.append(tr('st.drop') + ' ', el('u', null, tr('st.upload')));
+  z.append(line, el('span', 'st-drop__formats', formats));
+  z.addEventListener('click', async () => { const files = await pickFiles(accept, multiple); if (files.length) onFiles(files); });
+  z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('is-over'); });
+  z.addEventListener('dragleave', () => z.classList.remove('is-over'));
+  z.addEventListener('drop', (e) => { e.preventDefault(); z.classList.remove('is-over'); const files = [...e.dataTransfer.files]; if (files.length) onFiles(files); });
+  return z;
+}
+
+// ---- a colour picker: saturation and brightness in a square, hue below, HSB in numbers ----
+
+function hexToHsb(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [Math.round(((h * 60) + 360) % 360), Math.round(max ? (d / max) * 100 : 0), Math.round(max * 100)];
+}
+function hsbToHex(h, s, v) {
+  s /= 100; v /= 100;
+  const f = (n) => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+  return '#' + [f(5), f(3), f(1)].map((x) => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+}
+
+function colourPicker(hex, onInput) {
+  const box = el('div', 'st-picker');
+  const sq = el('div', 'st-picker__sq');
+  const knob = el('i', 'st-picker__knob');
+  sq.append(knob);
+  const hue = el('input', 'st-picker__hue');
+  Object.assign(hue, { type: 'range', min: 0, max: 359, step: 1 });
+  hue.setAttribute('aria-label', 'H');
+  const row = el('div', 'st-picker__row');
+  const mode = el('span', 'st-picker__mode');
+  mode.innerHTML = 'HSB ' + ICONS.chevron;
+  const nums = ['H', 'S', 'B'].map((k, i) => {
+    const n = el('input', 'st-picker__num');
+    Object.assign(n, { type: 'number', min: 0, max: i ? 100 : 359 });
+    n.setAttribute('aria-label', k);
+    return n;
+  });
+  row.append(mode, ...nums);
+  box.append(sq, hue, row);
+  let [h, s, v] = hexToHsb(hex);
+  const draw = (emit) => {
+    sq.style.setProperty('--hue', `hsl(${h} 100% 50%)`);
+    knob.style.left = s + '%';
+    knob.style.top = 100 - v + '%';
+    knob.style.background = hsbToHex(h, s, v);
+    hue.value = h;
+    nums.forEach((n, i) => { if (document.activeElement !== n) n.value = [h, s, v][i]; });
+    if (emit) onInput(hsbToHex(h, s, v));
+  };
+  const at = (e) => {
+    const r = sq.getBoundingClientRect();
+    s = Math.round(Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * 100);
+    v = Math.round((1 - Math.max(0, Math.min(1, (e.clientY - r.top) / r.height))) * 100);
+    draw(true);
+  };
+  sq.addEventListener('pointerdown', (e) => {
+    sq.setPointerCapture(e.pointerId);
+    at(e);
+    const move = (ev) => at(ev);
+    const up = () => { sq.removeEventListener('pointermove', move); sq.removeEventListener('pointerup', up); };
+    sq.addEventListener('pointermove', move);
+    sq.addEventListener('pointerup', up);
+  });
+  hue.addEventListener('input', () => { h = +hue.value; draw(true); });
+  nums.forEach((n, i) => n.addEventListener('change', () => {
+    const val = Math.max(0, Math.min(i ? 100 : 359, Math.round(+n.value || 0)));
+    if (i === 0) h = val; else if (i === 1) s = val; else v = val;
+    draw(true);
+  }));
+  box.set = (x) => { [h, s, v] = hexToHsb(x); draw(false); };
+  draw(false);
+  return box;
+}
+
 export class Guide {
   constructor(root, { onChange, onRelease, onWorkshop, onPaint, onDelete, onImport, onPlace = () => {}, onNear = () => {}, getRoom = () => null, onLight = () => {}, getAutoLight = () => [], getPictureLight = async () => null, getSettingView = () => null, onSettingLook = () => {} }) {
     this.getSettingView = getSettingView;
@@ -160,7 +307,6 @@ export class Guide {
     this.getPictureLight = getPictureLight;
     this.onPlace = onPlace;
     this.onNear = onNear;
-    // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
     // A piece's glow made for the first time: keep it with the world,
     // so every visitor sees it at once from afar.
     window.addEventListener('freeart:glow', (e) => {
@@ -171,7 +317,8 @@ export class Guide {
       }
       if (got) this.changed();
     });
-    window.addEventListener('freeart:piecefail', (e) => { if (this.root.isConnected) toast(tr('g.pieceFail', { why: e.detail.slice(0, 120) }), 9000); });
+    // A model or splat that cannot be drawn here (an old browser, a blocked link) is named, not hidden.
+    window.addEventListener('freeart:piecefail', (e) => { if (!this.root.hidden) toast(tr('g.pieceFail', { why: e.detail.slice(0, 120) }), 9000); });
     this.getRoom = getRoom;
     this.onDelete = onDelete;
     this.onImport = onImport;
@@ -181,6 +328,8 @@ export class Guide {
     this.onPaint = onPaint;
     this.syncs = new Map(); // panel → functions that bring its controls up to date
     this.brush = { tone: 2, spread: 0.06, style: 'stream' };
+    this.tab = 'story';
+    this.sel = -1; // the piece in hand: its place in the list of things
     this.root = el('div', 'guide');
     this.root.hidden = true;
     root.prepend(this.root);
@@ -191,6 +340,10 @@ export class Guide {
       const k = e.key.toLowerCase();
       if (k === 'z' && !e.shiftKey) { e.preventDefault(); this.undo(); }
       else if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); this.redo(); }
+    });
+    // A tap outside the colour picker closes it.
+    document.addEventListener('pointerdown', (e) => {
+      if (this.pickerEl && !this.pickerEl.contains(e.target) && !e.target.closest?.('.st-swatch, .st-pick-own')) this.closePicker();
     });
   }
 
@@ -234,14 +387,9 @@ export class Guide {
     this.lastText = JSON.stringify(state);
     this.w = snapshot(state);
     this.stopPlace();
-    // Painting the light, you keep painting: only the light goes back.
-    const lighting = this.lightOn;
-    if (lighting) { this.lightOn = false; this.onLight(null); }
-    const y = this.root.scrollTop;
+    if (this.sel >= this.things().length) this.sel = -1;
     this.onChange(this.w);
     this.render();
-    if (lighting && this.w.light) this.startLight();
-    this.root.scrollTop = y;
     this.syncUndo();
   }
 
@@ -258,110 +406,278 @@ export class Guide {
     this.plotLabel = plotLabel;
     this.editing = editing;
     this.past = []; this.future = [];
-    this.picked = null;
+    this.sel = -1;
+    this.tab = 'story';
     this.last = snapshot(this.w);
     this.lastText = JSON.stringify(this.last);
     clearTimeout(this.settle); this.settle = null;
+    this.quota = null; this.uploaded = 0;
+    if (editing) space(this.w.id).then((r) => { if (r) { this.uploaded = r.used; this.quota = r.quota; this.showSpace(); } }).catch(() => {});
     this.render();
   }
 
   show(on) {
     this.root.hidden = !on;
-    if (!on) { this.stopPaint(); this.stopPlace(); this.stopLight(); }
+    document.body.classList.toggle('in-studio', on);
+    if (!on) { this.stopPaint(); this.stopPlace(); this.stopLight(); this.closePicker(); document.body.classList.remove('studio-preview'); }
   }
 
   changed() {
     this.remember();
     this.onChange(this.w);
     this.syncUndo();
-    this.showSpace?.();
+    this.showSpace();
     for (const list of this.syncs.values()) for (const sync of list) sync();
     if (this.placing) this.syncPlace();
   }
 
-  // The things people add live in the first chapter of the story.
+  // The things people add live in the first chapter of the story: that is the tour.
   things() {
     const steps = (this.w.process ||= { steps: [] }).steps;
     if (!steps.length) steps.push({ when: '', title: tr('g.stepTitle'), text: '', media: [] });
     return (steps[0].media ||= []);
   }
 
+  // Older code paths (arranging, settings) redraw "the things": here that is the timeline,
+  // and the settings of the piece in hand.
+  drawThings() {
+    this.drawTimeline();
+  }
+
+  // ---- the whole studio ----
+
   render() {
     this.stopPaint();
     this.stopLight();
-    const page = el('div', 'guide__page');
-    const top = el('div', 'guide__top');
-    top.append(el('p', 'guide__kicker', this.plotLabel ? tr('g.yourPlot', { plot: this.plotLabel }) : tr('g.yourWorld')));
-    const full = button(tr('g.workshop'), 'guide__full');
-    full.addEventListener('click', () => this.onWorkshop(this.w));
-    // Undo and redo stay at hand at the top while you scroll.
-    const undoBar = el('div', 'g-undo');
-    this.undoBtn = button('↶ ' + tr('g.undoIt'), 'g-btn g-btn--soft g-undo__btn');
-    this.redoBtn = button('↷ ' + tr('g.redo'), 'g-btn g-btn--soft g-undo__btn');
-    this.undoBtn.title = tr('g.undoKeys');
-    this.undoBtn.addEventListener('click', () => this.undo());
-    this.redoBtn.addEventListener('click', () => this.redo());
-    undoBar.append(this.undoBtn, this.redoBtn);
-    top.append(undoBar, full);
-
-    const name = el('input', 'g-input g-input--name');
-    Object.assign(name, { value: this.w.title === 'Untitled world' ? '' : this.w.title, placeholder: tr('g.untitled'), maxLength: 60 });
-    name.setAttribute('aria-label', tr('g.nameAria'));
-    name.addEventListener('input', () => { this.w.title = name.value; this.changed(); });
-    const by = el('div', 'g-by');
-    const who = el('input', 'g-input g-input--small');
-    Object.assign(who, { value: this.w.creator.name === 'Anonymous' ? '' : this.w.creator.name, placeholder: tr('g.byPh'), maxLength: 50 });
-    who.setAttribute('aria-label', tr('ws.creatorPh'));
-    who.addEventListener('input', () => { this.w.creator.name = who.value; this.changed(); });
-    const made = el('div', 'g-choice g-choice--small');
-    for (const [v, label] of [['human', tr('g.me')], ['together', tr('g.meAi')], ['machine', tr('g.ai')]]) {
-      const b = button(label, 'g-pill' + (this.w.creator.nature === v ? ' is-on' : ''));
-      b.addEventListener('click', () => { this.w.creator.nature = v; made.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.changed(); });
-      made.append(b);
-    }
-    by.append(who, made);
-
-    const { wrap: words } = writeBox(this.w.statement, tr('g.statementPh'), 4, (v) => { this.w.statement = v.slice(0, 500); this.changed(); });
-
-    // Four chapters in the order people think of them: who and what, the things, the particles, done.
-    // (The plot's light from afar is taken from how the world looks, each time it is saved.)
-    const chapter = (n, title, help) => {
-      const head = el('div', 'g-chapter');
-      head.append(el('h3', 'g-chapter__title', `${n} · ${title}`));
-      if (help) head.append(el('p', 'g-help', help));
-      return head;
-    };
-    page.append(top, chapter(1, tr('g.step1')), name, by, words,
-      chapter(2, tr('g.step2'), tr('g.step2Help')), this.shelf(), this.thingsList(), this.textsList(),
-      chapter(3, tr('g.step3'), tr('g.step3Help')), this.particles(),
-      chapter(4, tr('g.step4')), this.finish());
-    this.root.replaceChildren(page);
+    this.closePicker();
+    this.syncs.clear();
+    const back = el('a', 'st-btn st-back');
+    back.href = '#/';
+    back.innerHTML = ICONS.back;
+    back.append(el('span', null, tr('st.back')));
+    this.leftEl = el('div', 'st-left');
+    this.rightEl = el('aside', 'st-panel st-right');
+    this.timelineEl = el('div', 'st-timeline');
+    this.storageEl = el('div', 'st-storage');
+    this.root.replaceChildren(back, this.topBar(), this.leftEl, this.rightEl, this.timelineEl, this.storageEl);
+    this.drawLeft();
+    this.drawTimeline();
+    this.drawInspector();
+    this.showSpace();
     this.syncUndo();
   }
 
-  // ---- the shelf of tools ----
-
-  shelf() {
-    const wrap = el('section', 'g-shelf');
-    const tiles = el('div', 'g-tiles');
-    const tools = [
-      [tr('g.text'), () => this.addText()],
-      [tr('g.pictures'), () => this.addPictures()],
-      [tr('g.drawing'), () => this.addDrawing()],
-      [tr('g.sound'), () => this.addSound()],
-      [tr('g.video'), () => this.addVideo()],
-      [tr('g.tune'), () => this.addTune()],
-      [tr('g.words'), () => this.addThing({ kind: 'poem', poem: { lines: [], motion: 'gather' } })],
-      [tr('g.objects'), () => this.addObject()],
-    ];
-    for (const [label, fn] of tools) {
-      const t = button(label, 'g-tile');
-      t.addEventListener('click', fn);
-      tiles.append(t);
-    }
-    wrap.append(tiles);
-    return wrap;
+  topBar() {
+    const bar = el('div', 'st-top');
+    // Sound, as in the city's own bar: five small bars that dance while it plays.
+    const snd = button('', 'sound-toggle mono st-sound');
+    snd.append(el('span', null, tr('nav.soundLabel')), el('span', 'bars'));
+    for (let i = 0; i < 5; i++) snd.lastChild.append(el('i'));
+    snd.addEventListener('click', () => document.getElementById('sound-toggle')?.click());
+    const tools = el('div', 'st-top__tools');
+    const eye = iconButton('eye', tr('st.preview'), 'st-icon st-eye');
+    eye.addEventListener('click', () => {
+      const on = document.body.classList.toggle('studio-preview');
+      eye.classList.toggle('is-on', on);
+      if (on) { this.stopPaint(); this.closePicker(); }
+    });
+    this.undoBtn = iconButton('undo', tr('g.undoIt') + ' · ' + tr('g.undoKeys'));
+    this.redoBtn = iconButton('undo', tr('g.redo'), 'st-icon st-redo');
+    this.undoBtn.addEventListener('click', () => this.undo());
+    this.redoBtn.addEventListener('click', () => this.redo());
+    const draft = button(tr('st.saveDraft'), 'st-btn');
+    draft.addEventListener('click', () => { this.commit(); saveDraft(exportable(normalizeWorld({ ...this.w }))); toast(tr('st.draftSaved')); });
+    const publish = button(this.editing ? tr('st.update') : tr('st.publish'), 'st-btn st-btn--main');
+    publish.addEventListener('click', () => { this.stopPaint(); this.onRelease(this.w); });
+    tools.append(eye, this.undoBtn, this.redoBtn, draft, publish);
+    bar.append(snd, tools);
+    return bar;
   }
+
+  // ---- the left: story, background, media ----
+
+  drawLeft() {
+    this.syncs.delete('left');
+    this.syncs.set('left', []);
+    const tabs = el('div', 'st-tabs');
+    for (const id of ['story', 'background', 'media']) {
+      const b = button(tr('st.tab.' + id), 'st-tab' + (this.tab === id ? ' is-on' : ''));
+      b.addEventListener('click', () => { if (this.tab === id) return; this.stopPaint(); this.closePicker(); this.tab = id; this.drawLeft(); });
+      tabs.append(b);
+    }
+    const body = el('div', 'st-left__body');
+    if (this.tab === 'story') body.append(...this.storyCards());
+    if (this.tab === 'background') body.append(...this.backgroundCards());
+    if (this.tab === 'media') body.append(this.mediaCard());
+    this.leftEl.replaceChildren(tabs, body);
+  }
+
+  storyCards() {
+    const c = card(tr('st.storyTitle'), tr('st.storyHelp'));
+    const name = input(this.w.title === 'Untitled world' ? '' : this.w.title, tr('st.namePh'), (v) => { this.w.title = v; this.changed(); }, 60);
+    const by = input(this.w.creator.name === 'Anonymous' ? '' : this.w.creator.name, tr('st.byPh'), (v) => { this.w.creator.name = v; this.changed(); }, 50);
+    const made = chips([['human', tr('g.me')], ['together', tr('g.meAi')], ['machine', tr('g.ai')]], this.w.creator.nature, (v) => { this.w.creator.nature = v; this.changed(); }, 'st-chips st-chips--small');
+    const byField = field(tr('st.by'), by);
+    byField.append(made);
+    const story = textarea(this.w.statement, tr('st.storyPh'), (v) => { this.w.statement = v.slice(0, 500); this.changed(); }, 500, 5);
+    c.append(field(tr('st.name'), name), byField, field(tr('st.story'), story));
+    const out = [c];
+    if (!this.editing) {
+      // An AI can write a whole world as text; this takes it in as it is.
+      const ai = el('details', 'st-card st-more');
+      ai.append(el('summary', 'st-label', tr('g.aiPaste')));
+      const box = textarea('', '{ "title": … }', () => {}, 400000, 5);
+      const use = button(tr('g.useIt'), 'st-btn');
+      use.addEventListener('click', () => {
+        const t = box.value, a = t.indexOf('{'), b = t.lastIndexOf('}');
+        try { this.onImport(JSON.parse(t.slice(a, b + 1))); } catch { toast(tr('g.aiBad')); }
+      });
+      ai.append(box, use);
+      out.push(ai);
+    } else {
+      const rm = button(tr('ws.remove'), 'st-btn st-btn--danger st-remove-world');
+      rm.addEventListener('click', () => { if (confirm(tr('g.confirmRemove'))) this.onDelete(this.w.id); });
+      out.push(rm);
+    }
+    return out;
+  }
+
+  backgroundCards() {
+    const sync = this.syncs.get('left');
+    // Particles: one press fills the plot; or draw them by hand.
+    const p = card(tr('st.particles'), tr('st.particlesHelp'));
+    const fill = button(tr('st.randomFill'), 'st-btn st-btn--main');
+    fill.addEventListener('click', () => {
+      const box = this.getRoom()?.form;
+      if (!box) return;
+      this.stopPaint();
+      this.w.form = { ...this.w.form, type: 'hand', strokes: fillStrokes(box, { limit: STROKE_REACH }), density: Math.max(this.w.form.density, 0.75) }; // a whole plot wants plenty of particles
+      delete this.w.form.hidden;
+      this.changed();
+    });
+    const draw = button(tr('st.drawHand'), 'st-btn' + (this.painting ? ' is-on' : ''));
+    draw.addEventListener('click', () => this.togglePaint());
+    const two = el('div', 'st-two');
+    two.append(fill, draw);
+    // The shapes the particles can take by themselves (or none at all).
+    const shapes = chips([...FORMS.map((f) => [f.id, tr('form.' + f.id)]), ['none', tr('form.none')]],
+      this.w.form.hidden ? 'none' : this.w.form.type,
+      (id) => { if (id === 'none') this.w.form.hidden = true; else { this.w.form.type = id; delete this.w.form.hidden; } this.changed(); });
+    // The world's three colours: tap one to change it.
+    const colours = el('div', 'st-swatches');
+    const swatches = [0, 1, 2].map((i) => {
+      const b = button('', 'st-swatch' + (this.painting && this.brush.tone === i ? ' is-on' : ''));
+      b.style.background = this.w.palette[i];
+      b.setAttribute('aria-label', tr('colour.' + i));
+      b.addEventListener('click', () => {
+        if (this.painting) { this.brush.tone = i; this.paint(); swatches.forEach((x, j) => x.classList.toggle('is-on', j === i)); }
+        this.openPicker(i, b);
+      });
+      colours.append(b);
+      return b;
+    });
+    const energy = slider(tr('st.energy'), 0, 1, 0.01, this.w.form.energy, () => {}, (v) => { this.w.form.energy = v; this.changed(); });
+    const density = slider(tr('st.density'), 0, 1, 0.01, this.w.form.density, () => {}, (v) => { this.w.form.density = v; this.changed(); });
+    p.append(two, shapes, field(tr('st.color'), colours), energy, density);
+    // While drawing: the brush, and the ways out.
+    if (this.painting) {
+      const brushes = chips(BRUSHES.map((id) => [id, tr('brush.' + id)]), this.brush.style, (id) => { this.brush.style = id; this.paint(); });
+      const soft = slider(tr('g.soft'), 0.01, 0.3, 0.005, this.brush.spread, (v) => { this.brush.spread = v; this.paint(); });
+      const undo = button(tr('g.undo'), 'st-btn');
+      undo.addEventListener('click', () => { this.w.form.strokes?.pop(); if (!this.w.form.strokes?.length) delete this.w.form.strokes; this.changed(); });
+      const clear = button(tr('g.clear'), 'st-btn');
+      clear.addEventListener('click', () => { delete this.w.form.strokes; this.changed(); });
+      const turn = button(tr('g.turn'), 'st-btn');
+      turn.addEventListener('click', () => {
+        this.turning = !this.turning;
+        turn.textContent = this.turning ? tr('g.backDrawing') : tr('g.turn');
+        this.turning ? this.onPaint(false) : this.paint();
+      });
+      const done = button(tr('ui.done'), 'st-btn st-btn--main');
+      done.addEventListener('click', () => this.stopPaint());
+      const row = el('div', 'st-row st-row--end');
+      row.append(undo, clear, turn, done);
+      p.append(el('p', 'st-card__help', tr('g.paintHelp')), field(tr('brush.label'), brushes), soft, row);
+    }
+    sync.push(() => {
+      shapes.set(this.w.form.hidden ? 'none' : this.w.form.type);
+      swatches.forEach((b, i) => { b.style.background = this.w.palette[i]; });
+      energy.set(this.w.form.energy);
+      density.set(this.w.form.density);
+    });
+    // Mood: colours, movement and sound together; or your own colours.
+    const m = card(tr('st.mood'), tr('st.moodHelp'));
+    const grid = el('div', 'st-grid');
+    const moodOf = () => FEELINGS.find((f) => f.palette.every((c, i) => c === this.w.palette[i]))?.id;
+    const cards = FEELINGS.map((f) => {
+      const b = button('', 'st-tile st-mood' + (moodOf() === f.id ? ' is-on' : ''));
+      const sw = el('span', 'st-mood__swatch');
+      for (const c of f.palette) { const s = el('i'); s.style.background = c; sw.append(s); }
+      b.append(sw, el('span', null, tr('feel.' + f.id)));
+      // A mood brings colours, sound and movement; particles already shaped by hand or filled stay.
+      b.addEventListener('click', () => {
+        const keep = this.w.form.type === 'hand';
+        Object.assign(this.w, { palette: f.palette.slice(), form: { ...f.form, type: keep ? 'hand' : f.form.type, strokes: this.w.form.strokes, ...(this.w.form.hidden ? { hidden: true } : {}) }, sound: { ...f.sound } });
+        if (!this.w.form.strokes) delete this.w.form.strokes;
+        this.changed();
+      });
+      b.dataset.id = f.id;
+      grid.append(b);
+      return b;
+    });
+    const own = button(tr('st.pickOwn'), 'st-btn st-btn--main st-pick-own');
+    own.addEventListener('click', () => this.openPicker(1, own));
+    grid.append(own);
+    sync.push(() => { const id = moodOf(); cards.forEach((b) => b.classList.toggle('is-on', b.dataset.id === id)); });
+    m.append(grid);
+    return [p, m];
+  }
+
+  // The colour picker floats beside the panel, for one of the world's three colours.
+  openPicker(i, from) {
+    this.closePicker();
+    const pop = el('div', 'st-panel st-pop');
+    const which = el('div', 'st-swatches st-swatches--pop');
+    const tabs = [0, 1, 2].map((j) => {
+      const b = button('', 'st-swatch st-swatch--small' + (j === i ? ' is-on' : ''));
+      b.style.background = this.w.palette[j];
+      b.setAttribute('aria-label', tr('colour.' + j));
+      b.addEventListener('click', () => { i = j; tabs.forEach((x, k) => x.classList.toggle('is-on', k === j)); picker.set(this.w.palette[j]); });
+      which.append(b);
+      return b;
+    });
+    const picker = colourPicker(this.w.palette[i], (hex) => { this.w.palette[i] = hex; tabs[i].style.background = hex; this.changed(); });
+    pop.append(which, picker);
+    const r = from.getBoundingClientRect(), left = this.leftEl.getBoundingClientRect();
+    pop.style.top = Math.max(16, Math.min(innerHeight - 340, r.top - 120)) + 'px';
+    pop.style.left = left.right + 12 + 'px';
+    this.root.append(pop);
+    this.pickerEl = pop;
+  }
+
+  closePicker() {
+    this.pickerEl?.remove();
+    this.pickerEl = null;
+  }
+
+  mediaCard() {
+    const c = card(tr('st.mediaTitle'), tr('st.mediaHelp'));
+    const grid = el('div', 'st-grid');
+    for (const [id, icon] of SHELF) {
+      const b = button('', 'st-tile st-add');
+      const ic = el('span', 'st-tile__icon');
+      ic.innerHTML = ICONS[icon];
+      const plus = el('span', 'st-add__plus');
+      plus.innerHTML = ICONS.plus;
+      b.append(ic, el('span', null, tr('st.k.' + id)), plus);
+      b.addEventListener('click', () => this.add(id));
+      grid.append(b);
+    }
+    c.append(grid);
+    return c;
+  }
+
+  // ---- adding things ----
 
   addThing(m, solid = false) {
     const list = this.things();
@@ -373,108 +689,291 @@ export class Guide {
       : solid ? { at: [0, Math.min(0.5, (room?.h ?? 1) * 0.4), 0], size: 0.45, motion: 'still', near: 'appear' } : list.filter((x) => x.show).length < SHOW_FIRST;
     list.push(m);
     this.changed();
-    this.drawThings();
+    this.select(list.length - 1);
     return true;
   }
 
-  addText() {
-    if (this.w.fragments.length >= 9) return toast(tr('g.maxTexts'));
-    this.w.fragments.push({ title: '', text: '', link: '', media: [] });
-    this.drawTexts(true);
+  // A new piece from the shelf: it joins the end of the timeline and opens in the panel on
+  // the right, where its file, words and place are chosen.
+  async add(id) {
+    if (id === 'text') return this.addThing({ kind: 'poem', poem: { lines: [], motion: 'gather' } });
+    if (id === 'draw') { const sk = await sketchPad(this.w.palette); if (sk) this.addThing({ kind: 'sketch', sketch: sk }); return; }
+    if (id === 'picture') return this.addThing({ kind: 'image', src: '' });
+    if (id === 'video') return this.addThing({ kind: 'video', src: '' });
+    if (id === '3d') return this.addThing({ kind: 'splat', src: '' }, true);
+    if (id === 'sound') return this.addThing({ kind: 'audio', src: '' });
+  }
+
+  // ---- the piece in hand ----
+
+  select(i, { quiet = false } = {}) {
+    const list = this.things();
+    this.sel = i >= 0 && i < list.length ? i : -1;
+    const m = list[this.sel];
+    if (m && SHOWABLE.includes(m.kind) && m.show) { this.stopPaint(); this.placing = null; this.startPlace(m, { quiet: true }); }
+    else this.stopPlace();
+    this.drawTimeline();
+    if (!quiet) this.drawInspector();
+  }
+
+  drawInspector() {
+    this.syncs.delete('right');
+    const m = this.things()[this.sel];
+    this.rightEl.hidden = !m;
+    document.body.classList.toggle('studio-has-piece', !!m);
+    if (!m) { this.rightEl.replaceChildren(); return; }
+    const kindName = tr('st.i.' + m.kind);
+    const head = el('div', 'st-card__head st-right__head');
+    head.append(el('h3', 'st-card__title', kindName));
+    const close = button('', 'st-close');
+    close.innerHTML = '<img src="img/close.svg" width="7" height="7" alt="">';
+    close.prepend(el('span', 'mono', tr('ui.close')));
+    close.addEventListener('click', () => this.select(-1));
+    head.append(close);
+    const body = el('div', 'st-right__body');
+    body.append(...this.pieceControls(m));
+    // Its name and its words: what the tour says at this stop.
+    const title = input(m.title, tr('st.titlePh'), (v) => { if (v) m.title = v; else delete m.title; this.changed(); }, 80);
+    const desc = textarea(m.caption, tr('st.descPh'), (v) => { if (v) m.caption = v; else delete m.caption; this.changed(); }, 200, 3);
+    body.append(field(tr('st.titleL'), title), field(tr('st.descL'), desc));
+    if (SHOWABLE.includes(m.kind)) {
+      if (!m.show) {
+        const show = el('label', 'g-check');
+        const cb = el('input');
+        Object.assign(cb, { type: 'checkbox', checked: false });
+        cb.addEventListener('change', () => { m.show = true; this.changed(); this.select(this.sel); });
+        show.append(cb, ' ' + tr('g.float'));
+        body.append(show);
+      } else {
+        const pos = el('details', 'st-more st-position');
+        pos.open = true;
+        pos.append(el('summary', 'st-label', tr('st.position')), this.placePanel(m));
+        body.append(pos);
+      }
+    }
+    // Removing needs no question: Undo brings it back.
+    const rm = button('', 'st-btn st-btn--danger');
+    rm.innerHTML = ICONS.remove;
+    rm.append(el('span', null, tr('st.remove')));
+    rm.addEventListener('click', () => {
+      const list = this.things();
+      this.stopPlace();
+      list.splice(this.sel, 1);
+      this.sel = -1;
+      this.changed();
+      this.drawTimeline();
+      this.drawInspector();
+      toast(tr('g.removedUndo'), 5000);
+    });
+    body.append(rm);
+    this.rightEl.replaceChildren(head, body);
+  }
+
+  // What is particular to each kind: its file or link, its words, its drawing or tune.
+  pieceControls(m) {
+    const out = [];
+    const redraw = () => { this.drawTimeline(); this.drawInspector(); };
+    const setSrc = (src) => { m.src = src; delete m.glow; this.changed(); redraw(); };
+    const linkField = (ph, take) => {
+      const u = el('input', 'st-input');
+      Object.assign(u, { type: 'url', value: m.src && !m.src.startsWith('data:') ? m.src : '', placeholder: ph });
+      let wait;
+      u.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(() => take(u.value.trim()), 600); });
+      u.addEventListener('change', () => { clearTimeout(wait); take(u.value.trim()); });
+      return field(tr('st.link'), u);
+    };
+    // A picture shows itself, with a button over it to change it.
+    const preview = (node, accept, onFiles) => {
+      const box = el('div', 'st-preview');
+      box.append(node);
+      const change = button(tr('st.change'), 'st-preview__change');
+      change.addEventListener('click', async () => { const f = await pickFiles(accept); if (f.length) onFiles(f); });
+      box.append(change);
+      return field(tr('st.upload'), box);
+    };
+    if (m.kind === 'image') {
+      const take = async (files) => { try { setSrc(await imageToData(files[0], 1600)); } catch { toast(tr('g.badPicture')); } };
+      if (m.src) { const img = el('img'); img.src = m.src; img.alt = ''; out.push(preview(img, 'image/*', take)); }
+      else out.push(field(tr('st.upload'), dropzone('image/*', '.jpg .png .webp', take)));
+      out.push(linkField('https://…', (v) => { if (v !== (m.src?.startsWith('data:') ? '' : m.src)) setSrc(v); }));
+    }
+    if (m.kind === 'video') {
+      const take = async (files) => {
+        const f = files[0];
+        if (f.size > VIDEO_MAX) return toast(tr('g.videoLarge', { name: f.name }));
+        setSrc(await fileToData(f));
+      };
+      if (m.src?.startsWith('data:')) { const v = el('video'); Object.assign(v, { src: m.src, controls: true, playsInline: true, preload: 'metadata' }); out.push(preview(v, 'video/*', take)); }
+      else out.push(field(tr('st.upload'), dropzone('video/*', '.mp4 .webm', take)));
+      out.push(linkField(tr('g.videoLinkPh'), (v) => { if (v !== m.src) setSrc(v); }));
+    }
+    if (m.kind === 'audio') {
+      const take = async (files) => {
+        const f = files[0];
+        if (f.size > AUDIO_MAX) return toast(tr('g.audioLarge', { name: f.name }));
+        setSrc(await fileToData(f));
+      };
+      if (m.src?.startsWith('data:')) { const a = el('audio'); Object.assign(a, { src: m.src, controls: true, preload: 'metadata' }); out.push(preview(a, 'audio/*', take)); }
+      else out.push(field(tr('st.upload'), dropzone('audio/*', '.mp3 .ogg .wav .m4a', take)));
+      const rec = button(tr('g.recordMic'), 'st-btn');
+      rec.addEventListener('click', async () => { const src = await recordSound(); if (src) setSrc(src); });
+      // Or a little tune, composed note by note.
+      const tune = button(tr('st.compose'), 'st-btn');
+      tune.addEventListener('click', async () => {
+        const mel = await melodyGrid(this.w.palette);
+        if (!mel) return;
+        delete m.src; delete m.glow;
+        Object.assign(m, { kind: 'melody', melody: mel });
+        this.changed();
+        redraw();
+      });
+      const row = el('div', 'st-row');
+      row.append(rec, tune);
+      out.push(row, linkField(tr('g.soundLinkPh'), (v) => { if (v !== m.src) setSrc(v); }));
+    }
+    if (m.kind === 'model' || m.kind === 'splat') {
+      const take = async (files) => {
+        const got = await objectFile(files[0]);
+        if (!got) return;
+        const was = m.kind;
+        Object.assign(m, got);
+        delete m.glow;
+        if (got.kind !== was) this.placed(m);
+        this.changed();
+        this.select(this.sel);
+      };
+      const has = m.src?.startsWith('data:');
+      if (has) out.push(field(tr('st.upload'), el('p', 'st-note', tr(m.kind === 'splat' ? 'g.isSplat' : 'g.isModel'))));
+      out.push(field(has ? tr('st.change') : tr('st.upload'), dropzone('.glb,.gltf,.fbx,.spz,.ply,.splat,.ksplat,.sog', '.glb .fbx .spz .ply .splat', take)));
+      out.push(linkField(tr('g.objectLinkPh'), (v) => {
+        const src = objectLink(v);
+        if (!src || src === m.src) return;
+        const kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(src) ? 'model' : 'splat';
+        const was = m.kind;
+        Object.assign(m, { src, kind });
+        delete m.glow; // a new piece gets its own glow when it loads
+        this.changed();
+        if (kind !== was) this.select(this.sel); else this.drawTimeline();
+      }));
+    }
+    if (m.kind === 'poem') {
+      const words = textarea((m.poem?.lines || []).join('\n'), tr('g.wordsPh'), (v) => {
+        m.poem = { ...m.poem, lines: v.split('\n').map((l) => l.trim()).filter(Boolean) };
+        this.changed();
+        this.drawTimeline();
+      }, 2000, 5);
+      const motion = chips(['gather', 'drift', 'still'].map((id) => [id, tr('motion.' + id)]), m.poem?.motion || 'gather', (id) => { m.poem = { ...(m.poem || { lines: [] }), motion: id }; this.changed(); });
+      out.push(field(tr('st.words'), words), motion);
+    }
+    if (m.kind === 'sketch') {
+      const box = el('div', 'st-preview st-preview--light');
+      box.append(sketchSvg(m.sketch, this.w.palette, { animate: false }));
+      const b = button(tr('g.keepDrawing'), 'st-preview__change');
+      b.addEventListener('click', async () => { const sk = await sketchPad(this.w.palette, m.sketch); if (sk) { m.sketch = sk; this.changed(); redraw(); } });
+      box.append(b);
+      out.push(box);
+    }
+    if (m.kind === 'melody') {
+      const b = button(tr('g.changeTune'), 'st-btn');
+      b.addEventListener('click', async () => { const mel = await melodyGrid(this.w.palette, m.melody); if (mel) { m.melody = mel; this.changed(); redraw(); } });
+      out.push(melodyPlayer(m.melody, this.w.palette), b);
+    }
+    return out;
+  }
+
+  // ---- the timeline: the tour, one small square per piece ----
+
+  drawTimeline() {
+    if (!this.timelineEl) return;
+    const list = this.things();
+    const strip = el('div', 'st-strip');
+    list.forEach((m, i) => strip.append(this.stripTile(m, i)));
+    const add = iconButton('plus', tr('st.addPiece'), 'st-stop st-stop--add');
+    add.addEventListener('click', () => { this.stopPaint(); this.closePicker(); this.tab = 'media'; this.drawLeft(); document.body.classList.remove('studio-preview'); });
+    strip.append(add);
+    this.stripEl = strip;
+    this.timelineEl.replaceChildren(el('p', 'st-timeline__label', tr('st.timeline')), strip);
+  }
+
+  stripTile(m, i) {
+    const tile = button('', 'st-stop' + (this.sel === i ? ' is-on' : '') + (m.show ? '' : ' is-off'));
+    tile.setAttribute('aria-label', `${i + 1} · ${tr('st.i.' + m.kind)}${m.title || m.caption ? ' · ' + (m.title || m.caption) : ''}`);
+    tile.title = m.title || m.caption || tr('st.i.' + m.kind);
+    if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; img.draggable = false; tile.append(img); tile.classList.add('has-picture'); }
+    else if ((m.kind === 'image' || m.kind === 'video' || m.kind === 'audio' || m.kind === 'model' || m.kind === 'splat') && !m.src) tile.classList.add('is-empty');
+    else { const ic = el('span', 'st-stop__icon'); ic.innerHTML = ICONS[KIND_ICON[m.kind] || 'picture']; tile.append(ic); }
+    tile.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); this.moveThing(i, i - 1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); this.moveThing(i, i + 1); }
+    });
+    tile.addEventListener('pointerdown', (e) => this.dragStop(e, tile, i));
+    return tile;
+  }
+
+  // A piece moved to another place on the timeline (and so on the tour).
+  moveThing(from, to) {
+    const list = this.things();
+    if (to < 0 || to >= list.length || to === from) return;
+    const held = list[this.sel];
+    const [m] = list.splice(from, 1);
+    list.splice(to, 0, m);
+    this.sel = held ? list.indexOf(held) : -1;
     this.changed();
+    this.drawTimeline();
+    this.stripEl.children[to]?.focus();
   }
 
-  async addPictures() {
-    const files = await pickFiles('image/*', true);
-    for (const f of files) {
-      try { if (!this.addThing({ kind: 'image', src: await imageToData(f, 1600) })) break; } catch { toast(tr('g.badPicture')); }
-    }
+  // Drag a square to another place; a tap opens the piece.
+  dragStop(e, tile, i) {
+    if (e.button > 0) return;
+    const tiles = [...this.stripEl.querySelectorAll('.st-stop:not(.st-stop--add)')];
+    const boxes = tiles.map((t) => t.getBoundingClientRect());
+    const x0 = e.clientX, y0 = e.clientY;
+    let dragging = false, to = i;
+    tile.setPointerCapture(e.pointerId);
+    const move = (ev) => {
+      const dx = ev.clientX - x0, dy = ev.clientY - y0;
+      if (!dragging && Math.hypot(dx, dy) < 6) return;
+      dragging = true;
+      tile.classList.add('is-dragging');
+      tile.style.transform = `translate(${dx}px, ${dy}px)`;
+      // The square under the middle of the dragged one is where it goes.
+      const cx = boxes[i].left + boxes[i].width / 2 + dx;
+      let best = Infinity;
+      boxes.forEach((b, j) => { const d = Math.abs(b.left + b.width / 2 - cx); if (d < best) { best = d; to = j; } });
+      tiles.forEach((t, j) => t.classList.toggle('is-target', j === to && j !== i));
+    };
+    const up = () => {
+      tile.removeEventListener('pointermove', move);
+      tile.removeEventListener('pointerup', up);
+      tile.removeEventListener('pointercancel', up);
+      tile.style.transform = '';
+      tile.classList.remove('is-dragging');
+      tiles.forEach((t) => t.classList.remove('is-target'));
+      if (dragging) { if (to !== i) this.moveThing(i, to); return; }
+      this.select(this.sel === i ? -1 : i);
+    };
+    tile.addEventListener('pointermove', move);
+    tile.addEventListener('pointerup', up);
+    tile.addEventListener('pointercancel', up);
   }
 
-  async addDrawing() {
-    const sk = await sketchPad(this.w.palette);
-    if (sk) this.addThing({ kind: 'sketch', sketch: sk });
-  }
+  // ---- storage: each plot has its fair share of the city's space ----
 
-  async addTune() {
-    const mel = await melodyGrid(this.w.palette);
-    if (mel) this.addThing({ kind: 'melody', melody: mel });
-  }
-
-  addSound() {
-    this.choose(tr('g.sound'), [
-      [tr('g.recordMic'), async () => { const src = await recordSound(); if (src) this.addThing({ kind: 'audio', src }); }],
-      [tr('g.soundFile'), async () => {
-        for (const f of await pickFiles('audio/*', true)) {
-          if (f.size > AUDIO_MAX) { toast(tr('g.audioLarge', { name: f.name })); continue; }
-          if (!this.addThing({ kind: 'audio', src: await fileToData(f) })) break;
-        }
-      }],
-      [tr('g.pasteLink'), () => this.addThing({ kind: 'audio', src: '' })],
-    ]);
-  }
-
-  addVideo() {
-    this.choose(tr('g.video'), [
-      [tr('g.videoFile'), async () => {
-        for (const f of await pickFiles('video/*', true)) {
-          if (f.size > VIDEO_MAX) { toast(tr('g.videoLarge', { name: f.name })); continue; }
-          if (!this.addThing({ kind: 'video', src: await fileToData(f) })) break;
-        }
-      }],
-      [tr('g.pasteVideo'), () => this.addThing({ kind: 'video', src: '' })],
-    ]);
-  }
-
-  // 3D models (.glb) and Gaussian splats (World Labs and others). Splats that are not
-  // .spz yet are packed into .spz right here, often ten times smaller.
-  addObject() {
-    this.choose(tr('g.objects'), [
-      [tr('g.splatFile'), async () => {
-        for (const f of await pickFiles('.spz,.ply,.splat,.ksplat,.sog', true)) {
-          const ext = (f.name.match(/\.(\w+)$/) || [])[1]?.toLowerCase();
-          let file = f;
-          if (ext !== 'spz' && ext !== 'sog') {
-            toast(tr('g.packing', { name: f.name }), 8000);
-            try {
-              const { transcodeSpz } = await import('@sparkjsdev/spark');
-              const { fileBytes } = await transcodeSpz({ inputs: [{ fileBytes: new Uint8Array(await f.arrayBuffer()), pathOrUrl: f.name }] });
-              file = new File([fileBytes], f.name.replace(/\.\w+$/, '.spz'));
-            } catch { toast(tr('g.badObject', { name: f.name })); continue; }
-          }
-          if (file.size > SPLAT_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: SPLAT_MAX / 1e6 })); continue; }
-          const type = 'application/x-' + (file.name.endsWith('.sog') ? 'sog' : 'spz');
-          if (!this.addThing({ kind: 'splat', src: await fileAs(file, type), caption: f.name.replace(/\.\w+$/, '') }, true)) break;
-        }
-      }],
-      [tr('g.modelFile'), async () => {
-        for (let f of await pickFiles('.glb,.fbx', true)) {
-          if (/\.fbx$/i.test(f.name)) {
-            toast(tr('g.packing', { name: f.name }), 8000);
-            try { f = await fbxToGlb(f); } catch { toast(tr('g.badObject', { name: f.name })); continue; }
-          }
-          if (f.size > MODEL_MAX) { toast(tr('g.objectLarge', { name: f.name, mb: MODEL_MAX / 1e6 })); continue; }
-          if (!this.addThing({ kind: 'model', src: await fileAs(f, 'model/gltf-binary'), caption: f.name.replace(/\.\w+$/, '') }, true)) break;
-        }
-      }],
-      [tr('g.objectLink'), () => this.addThing({ kind: 'splat', src: '' }, true)],
-    ]);
-  }
-
-  // A small sheet of choices under the shelf.
-  choose(title, options) {
-    const sheet = el('div', 'g-sheet');
-    sheet.append(el('p', 'g-card__kind', title));
-    for (const [label, fn] of options) {
-      const b = button(label, 'g-btn g-btn--soft');
-      b.addEventListener('click', () => { sheet.remove(); fn(); });
-      sheet.append(b);
-    }
-    const x = button(tr('ui.closeWord'), 'g-card__remove');
-    x.addEventListener('click', () => sheet.remove());
-    sheet.append(x);
-    this.root.querySelector('.g-sheet')?.remove();
-    this.root.querySelector('.g-shelf').append(sheet);
+  showSpace() {
+    const s = this.storageEl;
+    if (!s) return;
+    if (!isOnline()) { s.replaceChildren(el('span', null, tr('st.local'))); return; }
+    let fresh = 0;
+    const visit = (list) => (list || []).forEach((m) => { if (m.src?.startsWith('data:')) fresh += m.src.length * 0.75; });
+    this.w.fragments.forEach((f) => visit(f.media));
+    (this.w.process?.steps || []).forEach((st) => visit(st.media));
+    const quota = this.quota || 75e6, used = (this.uploaded || 0) + fresh;
+    const mb = (v) => String(Math.round(v / 1e6));
+    const icon = el('span', 'st-storage__ring');
+    icon.innerHTML = ring(used / quota);
+    s.replaceChildren(icon, el('span', null, tr('st.storage', { used: mb(used), quota: mb(quota) })));
+    s.classList.toggle('is-full', used > quota);
   }
 
   // ---- stars by hand ----
@@ -484,46 +983,8 @@ export class Guide {
     this.stopPlace();
     this.stopLight();
     this.painting = true;
-    const p = this.paintPanel;
-    p.hidden = false;
-    const tones = el('div', 'g-choice');
-    this.w.palette.forEach((c, i) => {
-      const b = button('', 'g-dot' + (this.brush.tone === i ? ' is-on' : ''));
-      b.style.background = c;
-      b.setAttribute('aria-label', tr('g.starsTone' + i));
-      b.addEventListener('click', () => { this.brush.tone = i; tones.querySelectorAll('.g-dot').forEach((x) => x.classList.toggle('is-on', x === b)); this.paint(); });
-      tones.append(b);
-    });
-    const soft = el('input');
-    Object.assign(soft, { type: 'range', min: 0.01, max: 0.3, step: 0.005, value: this.brush.spread });
-    soft.addEventListener('input', () => { this.brush.spread = +soft.value; this.paint(); });
-    const brushes = el('div', 'g-choice');
-    for (const id of BRUSHES) {
-      const b = button(tr('brush.' + id), 'g-pill' + (this.brush.style === id ? ' is-on' : ''));
-      b.addEventListener('click', () => { this.brush.style = id; brushes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x === b)); this.paint(); });
-      brushes.append(b);
-    }
-    const softL = el('label', 'g-range');
-    softL.append(el('span', null, tr('g.fine')), soft, el('span', null, tr('g.soft')));
-    // The star colours are the world's colours: change them here and the brush follows.
-    this.syncs.set('paint', []);
-    this.syncs.get('paint').push(() => tones.querySelectorAll('.g-dot').forEach((b, i) => { b.style.background = this.w.palette[i]; }));
-    const undo = button(tr('g.undo'), 'g-btn g-btn--soft');
-    undo.addEventListener('click', () => { this.w.form.strokes?.pop(); if (!this.w.form.strokes?.length) delete this.w.form.strokes; this.changed(); });
-    const clear = button(tr('g.clear'), 'g-btn g-btn--soft');
-    clear.addEventListener('click', () => { delete this.w.form.strokes; this.changed(); });
-    const turn = button(tr('g.turn'), 'g-btn g-btn--soft');
-    turn.addEventListener('click', () => {
-      this.turning = !this.turning;
-      turn.textContent = this.turning ? tr('g.backDrawing') : tr('g.turn');
-      this.turning ? this.onPaint(false) : this.paint();
-    });
-    const done = button(tr('ui.done'), 'g-btn g-btn--main');
-    done.addEventListener('click', () => this.stopPaint());
-    const row = el('div', 'g-choice');
-    row.append(undo, clear, turn, done);
-    p.replaceChildren(el('p', 'g-help', tr('g.paintHelp')), el('p', 'g-help', tr('brush.label')), brushes, tones, softL, row);
     this.paint();
+    if (this.tab === 'background') this.drawLeft();
   }
 
   paint() {
@@ -544,9 +1005,8 @@ export class Guide {
   stopPaint() {
     if (!this.painting) return;
     this.painting = false;
-    this.syncs.delete('paint');
-    this.paintPanel.hidden = true;
     this.onPaint(false);
+    if (this.tab === 'background' && this.leftEl?.isConnected) this.drawLeft();
   }
 
   // ---- placing things by hand ----
@@ -559,13 +1019,13 @@ export class Guide {
     return m.show;
   }
 
-  startPlace(m) {
+  // Quiet: the piece was only chosen, so nothing about the world has changed yet.
+  startPlace(m, { quiet = false } = {}) {
     this.stopPaint();
     this.stopLight();
     this.placed(m);
     this.placing = { m, turning: false };
-    this.changed();
-    this.drawThings();
+    if (!quiet) { this.changed(); this.drawThings(); }
     this.syncPlace();
   }
 
@@ -650,10 +1110,8 @@ export class Guide {
       view.textContent = this.placing.turning ? tr('g.backPlacing') : tr('g.turn');
       this.syncPlace();
     });
-    const done = button(tr('ui.done'), 'g-btn g-btn--main');
-    done.addEventListener('click', () => this.stopPlace());
     const row = el('div', 'g-choice');
-    row.append(view, done);
+    row.append(view);
     // What everyone needs first (where, how big, how high); the finer things folded away.
     const fine = el('details', 'g-more');
     fine.append(el('summary', null, tr('g.fineTune')), axes[0].l, axes[2].l, turn, face,
@@ -866,19 +1324,6 @@ export class Guide {
     this.drawThings();
   }
 
-  // ---- what has been made ----
-
-  thingsList() {
-    this.tourHelp = el('p', 'g-help g-tour-help', tr('g.tourHelp'));
-    this.stripEl = el('div', 'g-strip');
-    this.thingsEl = el('div', 'g-cards g-tour');
-    this.arrangeEl = this.arrangeBar();
-    this.drawThings();
-    const wrap = el('div');
-    wrap.append(this.tourHelp, this.stripEl, this.thingsEl, this.arrangeEl);
-    return wrap;
-  }
-
   // A thing's stop on the tour (1, 2, 3...), or 0 when it does not stand in the plot.
   tourStop(m) {
     return this.tourItems().indexOf(m) + 1;
@@ -889,204 +1334,6 @@ export class Guide {
     const list = this.things().filter((x) => SHOWABLE.includes(x.kind));
     const marked = list.filter((x) => x.show);
     return marked.length ? marked : list.slice(0, 5);
-  }
-
-  // A stop moved to another place on the tour: the other things keep their places in the list.
-  moveStop(from, to) {
-    const tour = this.tourItems(), list = this.things();
-    if (to < 0 || to >= tour.length || to === from) return;
-    const slots = tour.map((m) => list.indexOf(m));
-    const [m] = tour.splice(from, 1);
-    tour.splice(to, 0, m);
-    slots.forEach((slot, i) => { list[slot] = tour[i]; });
-    this.picked = null;
-    this.changed();
-    this.drawThings();
-    this.stripEl.children[to]?.focus();
-  }
-
-  // The tour at a glance: one small numbered picture per stop, all in view however many
-  // there are. Drag one to another place, or tap it and then tap where it should go.
-  drawStrip() {
-    const tour = this.tourItems();
-    this.stripEl.hidden = tour.length < 2;
-    this.stripHint ||= el('p', 'g-help g-strip__hint');
-    this.stripHint.textContent = this.picked != null ? tr('g.pickedHint') : '';
-    this.stripEl.replaceChildren(...tour.map((m, i) => this.stripTile(m, i, tour.length)), this.stripHint);
-  }
-
-  stripTile(m, i, n) {
-    const tile = button('', 'g-tile-stop' + (this.picked === i ? ' is-picked' : ''));
-    tile.setAttribute('aria-label', tr('g.stopN', { n: i + 1 }) + (m.caption ? ' · ' + m.caption : ''));
-    const face = el('span', 'g-tile-stop__face');
-    if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; img.draggable = false; face.append(img); }
-    else if (m.kind === 'sketch') face.append(sketchSvg(m.sketch, this.w.palette, { animate: false }));
-    else if (m.kind === 'poem') face.append(el('i', null, (m.poem?.lines || [])[0] || '…'));
-    else face.append(el('b', null, { video: '▶', audio: '♫', melody: '♪', model: '3D', splat: '3D', constellation: '✦', sculpture: '◆' }[m.kind] || '•'));
-    tile.append(el('span', 'g-tile-stop__n', String(i + 1)), face, el('span', 'g-tile-stop__cap', m.caption || ''));
-    tile.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); this.moveStop(i, i - 1); }
-      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); this.moveStop(i, i + 1); }
-    });
-    tile.addEventListener('pointerdown', (e) => this.dragStop(e, tile, i));
-    return tile;
-  }
-
-  dragStop(e, tile, i) {
-    if (e.button > 0) return;
-    const tiles = [...this.stripEl.querySelectorAll('.g-tile-stop')];
-    const boxes = tiles.map((t) => t.getBoundingClientRect());
-    const x0 = e.clientX, y0 = e.clientY;
-    let dragging = false, to = i;
-    tile.setPointerCapture(e.pointerId);
-    const move = (ev) => {
-      const dx = ev.clientX - x0, dy = ev.clientY - y0;
-      if (!dragging && Math.hypot(dx, dy) < 8) return;
-      dragging = true;
-      tile.classList.add('is-dragging');
-      tile.style.transform = `translate(${dx}px, ${dy}px)`;
-      // The stop under the middle of the dragged picture is where it goes.
-      const cx = boxes[i].left + boxes[i].width / 2 + dx, cy = boxes[i].top + boxes[i].height / 2 + dy;
-      let best = Infinity;
-      boxes.forEach((b, j) => { const d = Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy); if (d < best) { best = d; to = j; } });
-      tiles.forEach((t, j) => t.classList.toggle('is-target', j === to && j !== i));
-    };
-    const up = () => {
-      tile.removeEventListener('pointermove', move);
-      tile.removeEventListener('pointerup', up);
-      tile.removeEventListener('pointercancel', up);
-      tile.style.transform = '';
-      tile.classList.remove('is-dragging');
-      tiles.forEach((t) => t.classList.remove('is-target'));
-      if (dragging) { if (to !== i) this.moveStop(i, to); return; }
-      // A tap: pick it up, then a tap on another stop puts it there.
-      if (this.picked == null) this.picked = i;
-      else if (this.picked === i) this.picked = null;
-      else return this.moveStop(this.picked, i);
-      this.drawStrip();
-    };
-    tile.addEventListener('pointermove', move);
-    tile.addEventListener('pointerup', up);
-    tile.addEventListener('pointercancel', up);
-  }
-
-  drawThings() {
-    const list = this.things();
-    if (this.arrangeEl) this.arrangeEl.hidden = list.filter((m) => m.show && SHOWABLE.includes(m.kind)).length < 2; // arranging needs at least two
-    this.thingsEl.replaceChildren(...list.map((m, k) => this.card(m, k, list)));
-    this.drawStrip();
-  }
-
-  card(m, k, list) {
-    const c = el('div', 'g-card');
-    const redraw = () => this.drawThings();
-    // The head of the card: its stop on the tour, and the handle to drag it elsewhere.
-    const head = el('div', 'g-card__head');
-    const stop = this.tourStop(m);
-    head.append(el('span', 'g-stop' + (stop ? '' : ' is-off'), stop ? String(stop) : '–'), el('span', 'g-help g-card__kind', stop ? tr('g.stopN', { n: stop }) : tr('g.notInTour')));
-    c.append(head);
-    if (m.kind === 'image' && m.src) { const img = el('img'); img.src = m.src; img.alt = ''; c.append(img); }
-    if (m.kind === 'sketch') {
-      c.append(sketchSvg(m.sketch, this.w.palette, { animate: false }));
-      const b = button(tr('g.keepDrawing'), 'g-btn g-btn--soft');
-      b.addEventListener('click', async () => { const sk = await sketchPad(this.w.palette, m.sketch); if (sk) { m.sketch = sk; this.changed(); redraw(); } });
-      c.append(b);
-    }
-    if (m.kind === 'melody') {
-      c.append(melodyPlayer(m.melody, this.w.palette));
-      const b = button(tr('g.changeTune'), 'g-btn g-btn--soft');
-      b.addEventListener('click', async () => { const mel = await melodyGrid(this.w.palette, m.melody); if (mel) { m.melody = mel; this.changed(); redraw(); } });
-      c.append(b);
-    }
-    if (m.kind === 'poem') {
-      const { wrap } = writeBox((m.poem?.lines || []).join('\n'), tr('g.wordsPh'), 3, (v) => {
-        m.poem = { ...m.poem, lines: v.split('\n').map((l) => l.trim()).filter(Boolean) };
-        this.changed();
-      });
-      c.append(wrap);
-    }
-    if ((m.kind === 'audio' || m.kind === 'video') && m.src?.startsWith('data:')) {
-      const player = el(m.kind);
-      Object.assign(player, { src: m.src, controls: true, playsInline: true, preload: 'metadata' });
-      c.append(player);
-    } else if (m.kind === 'audio' || m.kind === 'video') {
-      const u = el('input', 'g-input g-input--small');
-      Object.assign(u, { type: 'url', value: m.src || '', placeholder: m.kind === 'video' ? tr('g.videoLinkPh') : tr('g.soundLinkPh') });
-      u.addEventListener('input', () => { m.src = u.value.trim(); delete m.glow; this.changed(); });
-      c.append(u);
-    }
-    if (m.kind === 'model' || m.kind === 'splat') {
-      c.append(el('p', 'g-help', tr(m.kind === 'splat' ? 'g.isSplat' : 'g.isModel')));
-      if (!m.src?.startsWith('data:')) {
-        const u = el('input', 'g-input g-input--small');
-        Object.assign(u, { type: 'url', value: m.src || '', placeholder: tr('g.objectLinkPh') });
-        // A pasted link takes effect at once (a moment after typing stops), not only on leaving the field.
-        let wait;
-        const take = () => {
-          const src = objectLink(u.value.trim());
-          if (src === m.src) return;
-          const kind = /\.(glb|gltf|fbx)(\?|#|$)/i.test(src) ? 'model' : 'splat';
-          const was = m.kind;
-          Object.assign(m, { src, kind });
-          delete m.glow; // a new piece gets its own glow when it loads
-          if (src !== u.value.trim()) u.value = src;
-          this.changed();
-          if (kind !== was) redraw();
-        };
-        u.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(take, 600); });
-        u.addEventListener('change', () => { clearTimeout(wait); take(); });
-        c.append(u);
-      }
-    }
-    const cap = el('input', 'g-input g-input--small');
-    Object.assign(cap, { value: m.caption || '', placeholder: tr('g.captionPh') });
-    cap.addEventListener('input', () => { m.caption = cap.value; this.changed(); });
-    c.append(cap);
-
-    const tools = el('div', 'g-card__tools');
-    const show = el('label', 'g-check');
-    const cb = el('input');
-    Object.assign(cb, { type: 'checkbox', checked: !!m.show });
-    cb.addEventListener('change', () => { m.show = cb.checked; this.changed(); redraw(); });
-    show.append(cb, ' ' + tr('g.float'));
-    tools.append(show);
-    if (SHOWABLE.includes(m.kind)) {
-      const place = button(this.placing?.m === m ? tr('ui.done') : tr('g.place'), 'g-btn g-btn--soft');
-      place.addEventListener('click', () => (this.placing?.m === m ? this.stopPlace() : this.startPlace(m)));
-      tools.append(place);
-    }
-    // Removing needs no question: Undo brings it back.
-    const rm = button(tr('g.remove'), 'g-card__remove');
-    rm.addEventListener('click', () => { if (this.placing?.m === m) this.stopPlace(); list.splice(k, 1); this.changed(); redraw(); toast(tr('g.removedUndo'), 5000); });
-    tools.append(rm);
-    c.append(tools);
-    if (this.placing?.m === m) c.append(this.placePanel(m));
-    return c;
-  }
-
-  textsList() {
-    this.textsEl = el('div', 'g-cards');
-    this.drawTexts();
-    return this.textsEl;
-  }
-
-  drawTexts(focusLast = false) {
-    const frs = this.w.fragments;
-    this.textsEl.replaceChildren(...frs.map((fr, k) => {
-      const box = el('div', 'g-card g-card--text');
-      const t = el('input', 'g-input g-input--title');
-      Object.assign(t, { value: fr.title === 'Untitled' ? '' : fr.title, placeholder: tr('g.titlePh'), maxLength: 80 });
-      t.addEventListener('input', () => { fr.title = t.value; this.changed(); });
-      const { wrap } = writeBox(fr.text, tr('g.text'), 4, (v) => { fr.text = v; this.changed(); });
-      const tools = el('div', 'g-card__tools');
-      tools.append(el('span', 'g-help', tr('g.textHelp')));
-      const rm = button(tr('g.remove'), 'g-card__remove');
-      rm.addEventListener('click', () => { frs.splice(k, 1); this.changed(); this.drawTexts(); toast(tr('g.removedUndo'), 5000); });
-      tools.append(rm);
-      box.append(t, wrap, tools);
-      return box;
-    }));
-    if (focusLast) this.textsEl.lastChild?.querySelector('textarea')?.focus();
   }
 
   // ---- the plot's light ----
@@ -1232,133 +1479,5 @@ export class Guide {
     this.onLight(null);
     const again = () => { if (!this.lightOn) this.startLight(); };
     setTimeout(() => this.getPictureLight().then((light) => { if (light && !this.w.light) this.w.light = light; again(); }, again), 400);
-  }
-
-  // ---- look and feel ----
-
-  // The particles: one big button that fills the plot with flowing shapes, drawing
-  // by hand, none at all, a mood; the finer controls folded under "More options".
-  particles() {
-    const sec = el('section', 'g-particles');
-    this.syncs.set('looks', []);
-    const look = this.lookControls('looks');
-    const fill = button(tr('g.fill'), 'g-btn g-btn--main g-fill');
-    fill.addEventListener('click', () => {
-      const box = this.getRoom()?.form;
-      if (!box) return;
-      this.stopPaint();
-      this.w.form = { ...this.w.form, type: 'hand', strokes: fillStrokes(box, { limit: STROKE_REACH }), density: Math.max(this.w.form.density, 0.75) }; // a whole plot wants plenty of particles
-      delete this.w.form.hidden;
-      this.changed();
-    });
-    const draw = button(tr('g.stars'), 'g-btn g-btn--soft');
-    draw.addEventListener('click', () => this.togglePaint());
-    const row = el('div', 'g-choice');
-    row.append(draw);
-    this.paintPanel = el('div', 'g-paint');
-    this.paintPanel.hidden = true;
-
-    const grid = el('div', 'g-feel');
-    for (const f of FEELINGS) {
-      const b = button('', 'g-feel__card');
-      const sw = el('span', 'g-feel__swatch');
-      for (const c of f.palette) { const s = el('i'); s.style.background = c; sw.append(s); }
-      b.append(sw, el('b', null, tr('feel.' + f.id)));
-      // A mood brings colours, sound and movement; particles already shaped by hand or filled stay.
-      b.addEventListener('click', () => {
-        const keep = this.w.form.type === 'hand';
-        Object.assign(this.w, { palette: f.palette.slice(), form: { ...f.form, type: keep ? 'hand' : f.form.type, strokes: this.w.form.strokes, ...(this.w.form.hidden ? { hidden: true } : {}) }, sound: { ...f.sound } });
-        if (!this.w.form.strokes) delete this.w.form.strokes;
-        this.changed();
-      });
-      grid.append(b);
-    }
-    const more = el('details', 'g-looks');
-    more.append(el('summary', 'g-h', tr('g.more')), el('p', 'g-help', tr('g.ownColours')), look.colours, el('p', 'g-help', tr('g.shape')), look.shapes, look.energy, look.density);
-    sec.append(fill, el('p', 'g-help g-help--quiet', tr('g.fillHelp')), row, this.paintPanel, el('p', 'g-help', tr('g.mood')), grid, more);
-    return sec;
-  }
-
-  // Colours, shape, movement and number of stars. The same controls appear under
-  // "Colours, shape and movement" and while placing stars by hand; every copy stays in step.
-  lookControls(panel) {
-    const colours = el('div', 'g-colours');
-    [0, 1, 2].forEach((i) => {
-      const c = el('input');
-      Object.assign(c, { type: 'color', value: this.w.palette[i] });
-      c.setAttribute('aria-label', tr('colour.' + i));
-      c.addEventListener('input', () => { this.w.palette[i] = c.value; this.changed(); });
-      colours.append(c);
-    });
-    const shapes = el('div', 'g-choice');
-    for (const f of FORMS) {
-      const b = button(tr('form.' + f.id), 'g-pill' + (this.w.form.type === f.id ? ' is-on' : ''));
-      b.dataset.id = f.id;
-      b.addEventListener('click', () => { this.w.form.type = f.id; delete this.w.form.hidden; this.changed(); });
-      shapes.append(b);
-    }
-    // Or no particles at all: the space holds only what you place in it.
-    const none = button(tr('form.none'), 'g-pill' + (this.w.form.hidden ? ' is-on' : ''));
-    none.dataset.id = 'none';
-    none.addEventListener('click', () => { this.w.form.hidden = true; this.changed(); });
-    shapes.append(none);
-    const slider = (label, a, z, key) => {
-      const l = el('label', 'g-range');
-      const r = el('input');
-      Object.assign(r, { type: 'range', min: 0, max: 1, step: 0.01, value: this.w.form[key] });
-      r.setAttribute('aria-label', label);
-      r.addEventListener('change', () => { this.w.form[key] = +r.value; this.changed(); });
-      l.append(el('span', null, a), r, el('span', null, z));
-      return [l, r];
-    };
-    const [energy, er] = slider(tr('g.movement'), tr('g.still'), tr('g.lively'), 'energy');
-    const [density, dr] = slider(tr('g.starCount'), tr('g.few'), tr('g.many'), 'density');
-    this.syncs.get(panel).push(() => {
-      colours.querySelectorAll('input').forEach((x, i) => { if (x !== document.activeElement) x.value = this.w.palette[i]; });
-      shapes.querySelectorAll('.g-pill').forEach((x) => x.classList.toggle('is-on', x.dataset.id === (this.w.form.hidden ? 'none' : this.w.form.type)));
-      er.value = this.w.form.energy; dr.value = this.w.form.density;
-    });
-    return { colours, shapes, energy, density };
-  }
-
-  finish() {
-    const wrap = el('div', 'g-finish');
-    const raise = button(this.editing ? tr('g.save') : tr('g.put'), 'g-btn g-btn--main g-btn--big');
-    raise.addEventListener('click', () => { this.stopPaint(); this.onRelease(this.w); });
-    // Each plot has its fair share of the city's free space for pictures, sounds and videos.
-    const meter = el('p', 'guide__calm');
-    let uploaded = 0;
-    this.showSpace = () => {
-      if (!isOnline()) { meter.textContent = tr('g.savesItself'); return; }
-      let fresh = 0;
-      const visit = (list) => (list || []).forEach((m) => { if (m.src?.startsWith('data:')) fresh += m.src.length * 0.75; });
-      this.w.fragments.forEach((f) => visit(f.media));
-      (this.w.process?.steps || []).forEach((st) => visit(st.media));
-      const mb = (v) => (v / 1e6).toFixed(v < 10e6 ? 1 : 0);
-      meter.textContent = tr('g.space', { quota: mb(this.quota || 75e6), used: mb(uploaded + fresh) });
-    };
-    if (this.editing) space(this.w.id).then((r) => { if (r) { uploaded = r.used; this.quota = r.quota; this.showSpace(); } }).catch(() => {});
-    this.showSpace();
-    wrap.append(raise, meter);
-    if (!this.editing) {
-      // An AI can write a whole world as text; this takes it in as it is.
-      const ai = el('details', 'g-looks');
-      ai.append(el('summary', null, tr('g.aiPaste')));
-      const box = el('textarea', 'g-text');
-      Object.assign(box, { rows: 5, placeholder: '{ "title": … }' });
-      const use = button(tr('g.useIt'));
-      use.addEventListener('click', () => {
-        const t = box.value, a = t.indexOf('{'), b = t.lastIndexOf('}');
-        try { this.onImport(JSON.parse(t.slice(a, b + 1))); } catch { toast(tr('g.aiBad')); }
-      });
-      ai.append(box, use);
-      wrap.append(ai);
-    }
-    if (this.editing) {
-      const rm = button(tr('ws.remove'), 'g-card__remove');
-      rm.addEventListener('click', () => { if (confirm(tr('g.confirmRemove'))) this.onDelete(this.w.id); });
-      wrap.append(rm);
-    }
-    return wrap;
   }
 }
